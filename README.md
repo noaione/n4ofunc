@@ -4,7 +4,7 @@ How to install:
 ```py
 1. Download/Clone this repo
 2. Extract the files
-3. Copy n4ofunc.py to Python36\Lib\site-packages
+3. Copy n4ofunc.py to \Python36\Lib\site-packages
 4. Load it at vapoursynth, ex: import n4ofunc as nao
 ```
 
