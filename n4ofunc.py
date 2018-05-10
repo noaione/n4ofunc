@@ -77,7 +77,7 @@ def Nbm3d(optIN : vs.VideoNode):
 	Normal/Medium version of BM3D
 	!!CAUTION!! - Slow af, might break vapoursynth
 	REALLY REALLY SLOW, BUT SO FUCKING GOOD
-	"""
+	""" 
 	return core.bm3d.Basic(optIN)
 def Hbm3d(optIN : vs.VideoNode):
 	"""
@@ -100,7 +100,7 @@ def Hsmd(optIN : vs.VideoNode):
 	optIN: Input video
 	High version of SMDegrain
 	"""
-	smh = hvs.SMDegrain(optIN, tr=0.3, prefilter=3, RefineMotion=True, search=4)
+	smh = hvs.SMDegrain(optIN, tr=2.3, thSAD=50, thSADC=75, prefilter=3, RefineMotion=True, search=4)
 	return smh
 def Nnedi3taa(optIN : vs.VideoNode, cycle=0):
 	"""
@@ -190,7 +190,7 @@ def hdr2sdr(optIN: vs.VideoNode):
 	dither32 = fvf.Depth(optIN, 32) #dither to 32bit because tonemap only supported this bitdepth
 	mobius = tonemap1(dither32)
 	return core.tonemap.Reinhard(mobius, exposure=2.0, contrast=0.45, peak=1.7)
-def autistCode(optIN : vs.VideoNode, gpu=0):
+def autistCode(optIN : vs.VideoNode):
 	"""
 	Sole PC test purpose lol
 	optIN is Video
@@ -199,13 +199,8 @@ def autistCode(optIN : vs.VideoNode, gpu=0):
 	"""
 	src = fvf.Depth(optIN, 16)
 	rpow = edi.nnedi3_rpow2(src,rfactor=2) #why not?
-	if gpu == 1:
-		knlmM = core.knlm.KNLMeansCL(rpow, a=2, h=0.4, d=3, s=8, channels="YUV", device_type='gpu', device_id=0)
-	elif gpu == 0:
-		knlmM = core.knlm.KNLMeansCL(rpow, a=2, h=0.4, d=3, s=8, channels="YUV")
-	else:
-		raise ValueError('GPU number is out of range')
-	deband = f3kdb.Fag3kdb(knlmM, radiusy=12, radiusc=8, thry=60, thrc=40, grainy=15, grainc=0)
+	smd = hvs.SMDegrain(optIN, tr=2.3, thSAD=50, thSADC=75, prefilter=3, RefineMotion=True, search=4)
+	deband = f3kdb.Fag3kdb(smd, radiusy=12, radiusc=8, thry=60, thrc=40, grainy=15, grainc=0)
 	i444 = fvf.Downscale444(deband, w=1280, h=720, kernely="blackmanminlobe", kerneluv="blackmanminlobe")
 	aa = taa.TAAmbk(i444,aatype=1,mtype=1)
 	finalmeme = fvf.Depth(aa, 10)

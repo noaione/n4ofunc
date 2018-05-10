@@ -28,3 +28,4 @@ Problem:
 
 Version rev:
 - Version 1.0: first commit
+- Version 1.1: Fix autistCode, added a little bit option for High SMDegrain
