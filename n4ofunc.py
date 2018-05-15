@@ -17,30 +17,27 @@ def mSdeband(optIN : vs.VideoNode):
 	optIN: Input video
 	Mini-mini version of Deband
 	"""
-	debandsimpleaf = f3kdb.Fag3kdb(optIN)
-	return debandsimpleaf
+	return f3kdb.Fag3kdb(optIN)
 def Sdeband(optIN : vs.VideoNode):
 	"""
 	optIN: Input video
 	Mini version of Deband
 	"""
-	debandsimple = f3kdb.Fag3kdb(optIN, radiusy=12, radiusc=8, thry=60, thrc=40, grainy=15, grainc=0)
-	return debandsimple
+	return f3kdb.Fag3kdb(optIN, radiusy=12, radiusc=8, thry=60, thrc=40, grainy=15, grainc=0)
 def Mdeband(optIN : vs.VideoNode):
 	"""
 	optIN: Input video
 	Normal version of Deband
 	"""
-	debandsimple = f3kdb.Fag3kdb(optIN, radiusy=18, radiusc=12, thry=60, thrc=50, grainy=15, grainc=0)
-	return debandsimple
+	return f3kdb.Fag3kdb(optIN, radiusy=18, radiusc=12, thry=60, thrc=50, grainy=15, grainc=0)
 def Hdeband(optIN : vs.VideoNode):
 	"""
 	optIN: Input video
 	High version of Deband
 	"""
 	ref = optIN
-	out = optIN.f3kdb.Deband(range=16, y=50, cb=25, cr=25, grainy=15, grainc=0, output_depth=16)
-	mask = kgf.retinex_edgemask(ref).std.Inflate()
+	out = optIN.f3kdb.Deband(range=14, y=60, cb=40, cr=40, grainy=15, grainc=0, output_depth=16)
+	mask = kgf.retinex_edgemask(ref).std.Binarize(5000).std.Inflate()
 	merged = core.std.MaskedMerge(out, ref, mask)
 	out = kgf.adaptive_grain(merged,0.20)
 	return out
@@ -86,70 +83,61 @@ def Hbm3d(optIN : vs.VideoNode):
 	!!CAUTION!! - Slow af, might break vapoursynth
 	REALLY REALLY SLOW, BUT SO FUCKING GOOD
 	"""
-	hbm = mvf.BM3D(optIN, sigma=[4,0], radius1=2, matrix=6)
-	return hbm
+	return mvf.BM3D(optIN, sigma=[4,0], radius1=2, matrix=6)
 def Nsmd(optIN : vs.VideoNode):
 	"""
 	optIN: Input video
 	Normal/Medium version of SMDegrain
 	"""
-	smdN = hvs.SMDegrain(optIN, tr=2,thSAD=50,thSADC=75)
-	return smdN
+	return hvs.SMDegrain(optIN, tr=2,thSAD=50,thSADC=75)
 def Hsmd(optIN : vs.VideoNode):
 	"""
 	optIN: Input video
 	High version of SMDegrain
 	"""
-	smh = hvs.SMDegrain(optIN, tr=2.3, thSAD=50, thSADC=75, prefilter=3, RefineMotion=True, search=4)
-	return smh
+	return hvs.SMDegrain(optIN, tr=2.3, thSAD=50, thSADC=75, prefilter=3, RefineMotion=True, search=4)
 def Nnedi3taa(optIN : vs.VideoNode, cycle=0):
 	"""
 	optIN: Input video
 	cycle = (0-1) - 1 is nightmare
 	Fast, and good enough
 	"""
-	taaN = taa.TAAmbk(optIN,aatype='Nnedi3',cycle=cycle)
-	return taaN
+	return taa.TAAmbk(optIN,aatype='Nnedi3',cycle=cycle)
 def eedi3taa(optIN : vs.VideoNode, cycle=0):
 	"""
 	optIN: Input video
 	cycle = (0-1) - 1 is nightmare
 	Slow, but really good, cycle is disabled default
 	"""
-	taaE = taa.TAAmbk(optIN,aatype='Eedi3',cycle=cycle)
-	return taaE
+	return taa.TAAmbk(optIN,aatype='Eedi3',cycle=cycle)
 def Ntaa(optIN : vs.VideoNode):
 	"""
 	optIN: Input video
 	Normal kinda one, tho it may broke on some pc
 	"""
-	taaNor = taa.TAAmbk(optIN,aatype=1,mtype=1,strength=0.2,postaa=True,cycle=0)
-	return taaNor
+	return taa.TAAmbk(optIN,aatype=1,mtype=1,strength=0.2,postaa=True,cycle=0)
 def Htaa(optIN : vs.VideoNode): #caution, autist level bypassing through the fucking roof
 	"""
 	optIN: Input video
 	!!!WARNING!!!
 	- This one is a fucking nightmare, 1fps encode incoming
 	"""
-	taaHi = taa.TAAmbk(optIN,aatype=1,mtype=1,strength=0.3,postaa=True,cycle=1)
-	return taaHi
+	return taa.TAAmbk(optIN,aatype=1,mtype=1,strength=0.3,postaa=True,cycle=1)
 def deblock(optIN : vs.VideoNode):
 	"""
 	optIN: Input video
 	Deblocking stuff for your video
 	"""
-	debl = fvf.AutoDeblock(optIN)
-	return debl
+	return fvf.AutoDeblock(optIN)
 #resize
-def i444(optIN : vs.VideoNode, wRes=1280, hRes=720):
+def i444(optIN : vs.VideoNode, w=1280, h=720):
 	"""
 	optIN: Input Video
-	wRes: Width Resolution
-	hRes: Height Resoulution
+	w: Width Resolution
+	h: Height Resoulution
 	Hi444PP meme resize filter, using spline36 as kernely and blackmanminlobe for kerneluv
 	"""
-	i4444 = fvf.Downscale444(optIN, wRes, hRes, kernely='Spline36', kerneluv='blackmanminlobe')
-	return i4444
+	return fvf.Downscale444(optIN, w, h, kernely='blackmanminlobe', kerneluv='blackmanminlobe')
 #etc
 def dehardsub(softVideo : vs.VideoNode, hardVideo : vs.VideoNode):
 	"""

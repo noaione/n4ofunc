@@ -10,22 +10,24 @@ How to install:
 
 (stolen) Feature:
 - Deband (mSdeband, Sdeband, Mdeband, Hdeband)
-- KNLM (Mknlm, Hknlm)
+- KNLM (Mknlm, Hknlm) #Not Working Properly
 - BM3D (Nbm3d, Hbm3d)
 - SMDegrain (Nsmd, Hsmd)
 - AA, using vsTAAmbk (Nnedi3taa, eedi3taa, Ntaa, Htaa)
 - deblock
 - dehardsub
 - IVTC, Decimate, Resize to 720p (animu)
-- hdr2sdr
+- hdr2sdr (experimental)
 - autistCode (random shit)
+- i444 meme
 
 
 Problem:
 - Everything is a problem
 - KNLM not working properly
-- Brokes after 1 preview
+- Brokes after 1 preview (Kinda fixed)
 
 Version rev:
 - Version 1.0: first commit
 - Version 1.1: Fix autistCode, added a little bit option for High SMDegrain
+- Version 1.2: Some changes for High Deband, cleaned up script. Changed argument for i444
