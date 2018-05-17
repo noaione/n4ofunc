@@ -18,8 +18,6 @@ def to_plane_array(clip):
 	"""
 	return [core.std.ShufflePlanes(clip, x, colorfamily=vs.GRAY) for x in range(clip.format.num_planes)]
 
-
-
 #deband
 def mSdeband(optIN : vs.VideoNode):
 	"""
@@ -60,11 +58,12 @@ def Mknlm(optIN : vs.VideoNode, gpu=0):
 	Better than SMDegrain, worse than BM3D
 	"""
 	if gpu == 1:
-		return core.knlm.KNLMeansCL(optIN, a=2, h=0.25, d=3, channels="YUV", device_type='gpu', device_id=0)
+		denoise = [core.knlm.KNLMeansCL(optIN, a=2, h=0.25, d=3, channels="YUV", device_type='gpu', device_id=0)]
 	elif gpu == 0:
-		return core.knlm.KNLMeansCL(optIN, a=2, h=0.25, d=3, channels="YUV")
+		denoise = [core.knlm.KNLMeansCL(optIN, a=2, h=0.25, d=3, channels="YUV")]
 	else:
 		raise ValueError("Number defined is out of range")
+	return denoise
 def Hknlm(optIN : vs.VideoNode, gpu=0):
 	"""
 	optIN: Input video
@@ -73,11 +72,12 @@ def Hknlm(optIN : vs.VideoNode, gpu=0):
 	Better than SMDegrain, worse than BM3D
 	"""
 	if gpu == 1:
-		return core.knlm.KNLMeansCL(optIN, a=2, h=0.4, d=3, s=8, channels="YUV", device_type='gpu', device_id=0)
+		denoise = [core.knlm.KNLMeansCL(optIN, a=2, h=0.4, d=3, s=8, channels="YUV", device_type='gpu', device_id=0)]
 	elif gpu == 0:
-		return core.knlm.KNLMeansCL(optIN, a=2, h=0.4, d=3, s=8, channels="YUV")
+		denoise = [core.knlm.KNLMeansCL(optIN, a=2, h=0.4, d=3, s=8, channels="YUV")]
 	else:
 		raise ValueError("Number defined is out of range")
+	return denoise
 def Nbm3d(optIN : vs.VideoNode):
 	"""
 	optIN: Input video
@@ -218,27 +218,19 @@ def dehardsub(softVideo : vs.VideoNode, hardVideo : vs.VideoNode):
 	mask = fvf.Depth(mask, 16)
 	return core.std.MaskedMerge(hardVideo,softVideo,mask)
 
-def ivtcresize(optIN: vs.VideoNode):
-	return core.resize.Spline36(optIN, 1280, 720, format=vs.YUV420P10)
-def ivtc(optIN: vs.VideoNode, order=1, mode=3):
-	return core.vivtc.VFM(optIN, order=order, mode=mode)
-def deinterlace(optIN : vs.VideoNode,field=1):
-	return core.nnedi3.nnedi3(optIN,field=field)
-def animu(optIN: vs.VideoNode):
+def animu(optIN: vs.VideoNode, field=1, order=1, mode=3):
 	"""
 	Anime IVTC filterino
 	optIN: Input Video
 	order: 0 is bottom field first, 1 is top field first
+	field: 1
 	mode: see this, http://www.vapoursynth.com/doc/plugins/vivtc.html
 	"""
-	ivtcanimu = ivtc(optIN)
-	dein = deinterlace(ivtcanimu)
-	animu = ivtcresize(dein)
-	return core.vivtc.VDecimate(animu)
+	ivtcanimu = [core.vivtc.VFM(optIN, order=order, mode=mode)]
+	dein = [core.nnedi3.nnedi3(ivtcanimu, field=field)]
+	animu = [core.vivtc.VDecimate(dein)]
+	return core.resize.Spline36(animu, 1280, 720, format=vs.YUV420P10)
 
-def tonemap1(optIN: vs.VideoNode):
-	dither32 = fvf.Depth(optIN, 32)
-	return core.tonemap.Mobius(dither32, exposure=1.35, transition=10, peak=25)
 def hdr2sdr(optIN: vs.VideoNode):
 	"""
 	HDR2SDR Conversion
@@ -247,7 +239,7 @@ def hdr2sdr(optIN: vs.VideoNode):
 	VERY EXPERIMENTAL THINGY RIGHT HERE
 	"""
 	dither32 = fvf.Depth(optIN, 32) #dither to 32bit because tonemap only supported this bitdepth
-	mobius = tonemap1(dither32)
+	mobius = [core.tonemap.Mobius(dither32, exposure=1.35, transition=10, peak=25)]
 	return core.tonemap.Reinhard(mobius, exposure=2.0, contrast=0.45, peak=1.7)
 
 def benchmark(optIN : vs.VideoNode, w=1280, h=720):

@@ -25,7 +25,6 @@ How to install:
 
 Problem:
 - Everything is a problem
-- KNLM not working properly
 - Brokes after 1 preview (Kinda fixed)
 
 Version rev:
@@ -33,3 +32,4 @@ Version rev:
 - Version 1.1: Fix autistCode, added a little bit option for High SMDegrain
 - Version 1.2: Some changes for High Deband, cleaned up script. Changed argument for i444
 - Version 1.3: Added descale_rescale, reworked autistCode and renamed it to benchmark
+- Version 1.3.1: Fixed KNLMeansCL, some tweak and clean up
