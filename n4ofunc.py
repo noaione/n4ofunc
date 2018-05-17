@@ -6,10 +6,19 @@ import vsTAAmbk as taa
 import fag3kdb as f3kdb
 import havsfunc as hvs
 import edi_rpow2 as edi
-import functools
+from functools import partial
 
 #init
 core = vs.core
+
+#helper
+def to_plane_array(clip):
+	"""
+	Stolen from Kageru function
+	"""
+	return [core.std.ShufflePlanes(clip, x, colorfamily=vs.GRAY) for x in range(clip.format.num_planes)]
+
+
 
 #deband
 def mSdeband(optIN : vs.VideoNode):
@@ -41,6 +50,7 @@ def Hdeband(optIN : vs.VideoNode):
 	merged = core.std.MaskedMerge(out, ref, mask)
 	out = kgf.adaptive_grain(merged,0.20)
 	return out
+
 #denoise
 def Mknlm(optIN : vs.VideoNode, gpu=0):
 	"""
@@ -96,6 +106,46 @@ def Hsmd(optIN : vs.VideoNode):
 	High version of SMDegrain
 	"""
 	return hvs.SMDegrain(optIN, tr=2.3, thSAD=50, thSADC=75, prefilter=3, RefineMotion=True, search=4)
+def S_hybriddenoise(src, knl=0.4, tr=2, thsad=50, thsadc=75):
+	"""
+	src: video input
+	knl or h: knlmeanscl
+	tr, thsad, thsadc: smdegrain
+	##Stolen from kageru function
+	using smdegrain for denoise luma and knlmeanscl for denoise chroma
+	"""
+	planes = to_plane_array(src)
+	planes[0] = hvs.SMDegrain(planes[0], tr=tr, thSAD=thsad, thSADC=thsadc, prefilter=3, RefineMotion=True, search=4)
+	planes[1], planes[2] = [core.knlm.KNLMeansCL(plane, a=2, h=knl, d=3, s=8, device_type='gpu', device_id=0)
+							for plane in planes[1:]]
+	return core.std.ShufflePlanes(clips=planes, planes=[0, 0, 0], colorfamily=vs.YUV)
+def M_hybriddenoise(src, radius1=1, sigma=2, tr=2, thsad=50, thsadc=75):
+	"""
+	src: video input
+	radius1 & sigma: bm3d
+	tr, thsad, thsadc: smdegrain
+	##Stolen from kageru function
+	using bm3d for denoise luma and smdegrain for denoise chroma
+	"""
+	planes = to_plane_array(src)
+	planes[0] = mvf.BM3D(planes[0], radius1=radius1, sigma=sigma)
+	planes[1], planes[2] = [hvs.SMDegrain(plane, tr=tr, thSAD=thsad, thSADC=thsadc, prefilter=3, RefineMotion=True, search=4)
+							for plane in planes[1:]]
+	return core.std.ShufflePlanes(clips=planes, planes=[0, 0, 0], colorfamily=vs.YUV)
+def H_hybriddenoise(src, knl=0.4, sigma=2, radius1=1):
+	"""
+	src: video input
+	knl: is 
+	##Stolen from kageru function
+	using bm3d for denoise luma and knlmeanscl for denoise chroma
+	"""
+	planes = to_plane_array(src)
+	planes[0] = mvf.BM3D(planes[0], radius1=radius1, sigma=sigma)
+	planes[1], planes[2] = [core.knlm.KNLMeansCL(plane, a=2, h=knl, d=3, s=8, device_type='gpu', device_id=0)
+							for plane in planes[1:]]
+	return core.std.ShufflePlanes(clips=planes, planes=[0, 0, 0], colorfamily=vs.YUV)
+
+#anti-aliasing
 def Nnedi3taa(optIN : vs.VideoNode, cycle=0):
 	"""
 	optIN: Input video
@@ -123,12 +173,15 @@ def Htaa(optIN : vs.VideoNode): #caution, autist level bypassing through the fuc
 	- This one is a fucking nightmare, 1fps encode incoming
 	"""
 	return taa.TAAmbk(optIN,aatype=1,mtype=1,strength=0.3,postaa=True,cycle=1)
+
+#other
 def deblock(optIN : vs.VideoNode):
 	"""
 	optIN: Input video
 	Deblocking stuff for your video
 	"""
 	return fvf.AutoDeblock(optIN)
+
 #resize
 def i444(optIN : vs.VideoNode, w=1280, h=720):
 	"""
@@ -138,6 +191,22 @@ def i444(optIN : vs.VideoNode, w=1280, h=720):
 	Hi444PP meme resize filter, using spline36 as kernely and blackmanminlobe for kerneluv
 	"""
 	return fvf.Downscale444(optIN, w, h, kernely='blackmanminlobe', kerneluv='blackmanminlobe')
+def descale_rescale(src : vs.VideoNode, w: int, h: int, yuv444=False):
+	"""
+	optIN: Input video
+	w: Width
+	h: Height
+	Some descale -> upscale -> descale filter.
+	Set w & h to native resolution, using debilinear descale for this, enable i444 if you want i444
+	"""
+	descale1 = fvf.DebicubicM(src, w, h, b=0, c=1)
+	rpow = edi.nnedi3_rpow2(descale1,rfactor=2) #why not?
+	if yuv444:
+		rescale = i444(rpow,w,h)
+	else:
+		rescale = fvf.Despline36M(rpow, w, h)
+	return rescale
+
 #etc
 def dehardsub(softVideo : vs.VideoNode, hardVideo : vs.VideoNode):
 	"""
@@ -148,6 +217,7 @@ def dehardsub(softVideo : vs.VideoNode, hardVideo : vs.VideoNode):
 	mask = kgf.hardsubmask(hardVideo,softVideo)
 	mask = fvf.Depth(mask, 16)
 	return core.std.MaskedMerge(hardVideo,softVideo,mask)
+
 def ivtcresize(optIN: vs.VideoNode):
 	return core.resize.Spline36(optIN, 1280, 720, format=vs.YUV420P10)
 def ivtc(optIN: vs.VideoNode, order=1, mode=3):
@@ -165,6 +235,7 @@ def animu(optIN: vs.VideoNode):
 	dein = deinterlace(ivtcanimu)
 	animu = ivtcresize(dein)
 	return core.vivtc.VDecimate(animu)
+
 def tonemap1(optIN: vs.VideoNode):
 	dither32 = fvf.Depth(optIN, 32)
 	return core.tonemap.Mobius(dither32, exposure=1.35, transition=10, peak=25)
@@ -178,19 +249,22 @@ def hdr2sdr(optIN: vs.VideoNode):
 	dither32 = fvf.Depth(optIN, 32) #dither to 32bit because tonemap only supported this bitdepth
 	mobius = tonemap1(dither32)
 	return core.tonemap.Reinhard(mobius, exposure=2.0, contrast=0.45, peak=1.7)
-def autistCode(optIN : vs.VideoNode):
+
+def benchmark(optIN : vs.VideoNode, w=1280, h=720):
 	"""
 	Sole PC test purpose lol
 	optIN is Video
-	gpu: 1 is enable, 0 is disable
+	w: width
+	h: height
+	default is 1280x720
 	Just add yourvar.set_output() after using this script
 	"""
 	src = fvf.Depth(optIN, 16)
 	rpow = edi.nnedi3_rpow2(src,rfactor=2) #why not?
-	smd = hvs.SMDegrain(optIN, tr=2.3, thSAD=50, thSADC=75, prefilter=3, RefineMotion=True, search=4)
-	deband = f3kdb.Fag3kdb(smd, radiusy=12, radiusc=8, thry=60, thrc=40, grainy=15, grainc=0)
-	i444 = fvf.Downscale444(deband, w=1280, h=720, kernely="blackmanminlobe", kerneluv="blackmanminlobe")
-	aa = taa.TAAmbk(i444,aatype=1,mtype=1)
+	denoise = M_hybriddenoise(rpow)
+	deband = f3kdb.Fag3kdb(denoise, radiusy=12, radiusc=8, thry=60, thrc=40, grainy=15, grainc=0)
+	i444 = fvf.Downscale444(deband, w=w, h=h, kernely="blackmanminlobe", kerneluv="blackmanminlobe")
+	aa = taa.TAAmbk(i444,aatype='Eedi3',cycle=1)
 	finalmeme = fvf.Depth(aa, 10)
 	return finalmeme
 

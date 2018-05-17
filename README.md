@@ -18,9 +18,10 @@ How to install:
 - dehardsub
 - IVTC, Decimate, Resize to 720p (animu)
 - hdr2sdr (experimental)
-- autistCode (random shit)
-- i444 meme
-
+- benchmark (random shit)
+- i444 meme (i444)
+- descale_rescale
+- Hybrid denoise (S_hybriddenoise, M_hybriddenoise, H_hybriddenoise)
 
 Problem:
 - Everything is a problem
@@ -31,3 +32,4 @@ Version rev:
 - Version 1.0: first commit
 - Version 1.1: Fix autistCode, added a little bit option for High SMDegrain
 - Version 1.2: Some changes for High Deband, cleaned up script. Changed argument for i444
+- Version 1.3: Added descale_rescale, reworked autistCode and renamed it to benchmark
