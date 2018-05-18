@@ -277,7 +277,6 @@ def hdr2sdr(clip,peak=1000,desat=50,brightness=40,cont=1.05,lin=True,show_satmas
 
 	a = core.std.Expr(a, expr="x  {ldr_value_mult} *   ".format(ldr_value_mult=ldr_value_mult),format=vs.RGBS)
 	
-
 	r=core.std.ShufflePlanes(clips=[a], planes=[0], colorfamily=vs.GRAY)
 	g=core.std.ShufflePlanes(clips=[a], planes=[1], colorfamily=vs.GRAY)
 	b=core.std.ShufflePlanes(clips=[a], planes=[2], colorfamily=vs.GRAY)
@@ -317,13 +316,10 @@ def hdr2sdr(clip,peak=1000,desat=50,brightness=40,cont=1.05,lin=True,show_satmas
 	if show_clipped == True :
 		#show clipped
 		c=a
-	
 	#then
 	c=core.resize.Bicubic(clip=c, format=vs.YUV420P10, filter_param_a=0.0, filter_param_b=1.0, matrix_s="709", primaries_in_s="2020", primaries_s="709", transfer_in_s="linear", transfer_s="709",dither_type="ordered")
 
 	#some adjustment
-	#tewak.Tweak
-	#adjust.Tweak(bright=1.0)
 	if adjustIt:
 		if (cont < 0):
 			cont = 1.05
@@ -331,8 +327,6 @@ def hdr2sdr(clip,peak=1000,desat=50,brightness=40,cont=1.05,lin=True,show_satmas
 			cont = 100
 		c=adjust.Tweak(c,bright=brightness,cont=cont)
 	return c 
-
-
 
 def benchmark(optIN, w=1280, h=720):
 	"""
