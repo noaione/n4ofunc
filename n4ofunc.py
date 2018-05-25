@@ -171,13 +171,16 @@ def deblock(optIN):
 	return fvf.AutoDeblock(optIN)
 
 #resize
-def i444(optIN, w=1280, h=720):
+def i444(optIN, w: int, h: int):
 	"""
 	optIN: Input Video
 	w: Width Resolution
 	h: Height Resoulution
 	Hi444PP meme resize filter, using spline36 as kernely and blackmanminlobe for kerneluv
 	"""
+	if w is None and h is None:
+		w = optIN.VideoNode.width
+		h = optIN.VideoNode.height
 	return fvf.Downscale444(optIN, w, h, kernely='blackmanminlobe', kerneluv='blackmanminlobe')
 def descale_rescale(src, w: int, h: int, yuv444=False):
 	"""
@@ -188,7 +191,7 @@ def descale_rescale(src, w: int, h: int, yuv444=False):
 	Set w & h to native resolution, using debilinear descale for this, enable i444 if you want i444
 	"""
 	if w is not None and h is not None:
-		w = src.ViedoNode.width if w is None else w
+		w = src.VideoNode.width if w is None else w
 		h = src.VideoNode.height if h is None else h
 
 		descale1 = fvf.DebicubicM(src, w, h, b=0, c=1)
