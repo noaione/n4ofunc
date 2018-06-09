@@ -367,6 +367,7 @@ def benchmark(optIN, w=1280, h=720):
 tonemap = hdr2sdr
 autistCode = benchmark
 ivtc = animu
+rescale = descale_rescale
 
 """
 (c) 2018 Autist version of N4O
