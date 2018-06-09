@@ -66,22 +66,6 @@ def Hknlm(optIN):
 	Better than SMDegrain, worse than BM3D
 	"""
 	return core.knlm.KNLMeansCL(optIN, a=2, h=0.4, d=3, s=8, channels="YUV", device_type='gpu', device_id=0)
-def Nbm3d(optIN):
-	"""
-	optIN: Input video
-	Normal/Medium version of BM3D
-	!!CAUTION!! - Slow af, might break vapoursynth
-	REALLY REALLY SLOW, BUT SO FUCKING GOOD
-	""" 
-	return core.bm3d.Basic(optIN)
-def Hbm3d(optIN):
-	"""
-	optIN: Input video
-	High version of BM3D
-	!!CAUTION!! - Slow af, might break vapoursynth
-	REALLY REALLY SLOW, BUT SO FUCKING GOOD
-	"""
-	return mvf.BM3D(optIN, sigma=[4,0], radius1=2, matrix=6)
 def Nsmd(optIN):
 	"""
 	optIN: Input video
@@ -116,8 +100,8 @@ def M_hybriddenoise(src, radius1=1, sigma=2, tr=2, thsad=50, thsadc=75):
 	using bm3d for denoise luma and smdegrain for denoise chroma
 	"""
 	planes = to_plane_array(src)
-	planes[0] = mvf.BM3D(planes[0], radius1=radius1, sigma=sigma)
-	planes[1], planes[2] = [hvs.SMDegrain(plane, tr=tr, thSAD=thsad, thSADC=thsadc, prefilter=3, RefineMotion=True, search=4)
+	planes[0] = hvs.SMDegrain(planes[0], tr=tr, thSAD=thsad, thSADC=thsadc, prefilter=3, RefineMotion=True, search=4)
+	planes[1], planes[2] = [mvf.BM3D(plane, radius1=radius1, sigma=sigma)
 							for plane in planes[1:]]
 	return core.std.ShufflePlanes(clips=planes, planes=[0, 0, 0], colorfamily=vs.YUV)
 def H_hybriddenoise(src, knl=0.4, sigma=2, radius1=1):
@@ -157,49 +141,80 @@ def Ntaa(optIN):
 def Htaa(optIN): #pre-caution, lag.
 	"""
 	optIN: Input video
-	!!!WARNING!!!
-	- This one is a fucking nightmare, 1fps encode incoming
 	"""
 	return taa.TAAmbk(optIN,aatype=1,mtype=1,strength=0.3,postaa=True,cycle=1)
 
-#other
-def deblock(optIN):
-	"""
-	optIN: Input video
-	Deblocking stuff for your video
-	"""
-	return fvf.AutoDeblock(optIN)
-
 #resize
-def i444(optIN, w: int, h: int):
+def i444(src, w: int, h: int):
 	"""
 	optIN: Input Video
 	w: Width Resolution
 	h: Height Resoulution
-	Hi444PP meme resize filter, using spline36 as kernely and blackmanminlobe for kerneluv
+	Hi444PP meme resize filter
 	"""
-	if w is None and h is None:
-		w = optIN.VideoNode.width
-		h = optIN.VideoNode.height
-	return fvf.Downscale444(optIN, w, h, kernely='blackmanminlobe', kerneluv='blackmanminlobe')
-def descale_rescale(src, w: int, h: int, yuv444=False):
+	if w is not None and h is not None:
+		w = src.VideoNode.width if w is None else w
+		h = src.VideoNode.height if h is None else h
+	return fvf.Downscale444(src, w, h, kernely='blackmanminlobe', kerneluv='blackmanminlobe')
+def descale_rescale(src, w: int, h: int, yuv444=False, descalemode='bicubic', args_a='0.33', args_b='0.33'):
 	"""
-	optIN: Input video
-	w: Width
-	h: Height
+	src: Input video
+	w: Width (int)
+	h: Height (int)
+	yuv444: True/False (bool)
+	descalemode: bicubic, bilinear, spline16. spline36, lanczos(str)
+	args_a: Available only for bicubic and lanczos
+		- bicubic: b
+		- lanczos: taps
+	args_b: Available only for bicubic
+		- bicubic: c
 	Some descale -> upscale -> descale filter.
 	Set w & h to native resolution, using debilinear descale for this, enable i444 if you want i444
 	"""
 	if w is not None and h is not None:
 		w = src.VideoNode.width if w is None else w
 		h = src.VideoNode.height if h is None else h
-
-		descale1 = fvf.DebicubicM(src, w, h, b=0, c=1)
-		rpow = edi.nnedi3_rpow2(descale1,rfactor=2) #why not?
-		if yuv444:
-			rescale = i444(rpow,w,h)
-		else:
+	if descalemode.lower() == 'bicubic':
+		descale1 = fvf.DebicubicM(src, w, h, b=args_a, c=args_b)
+	elif descalemode.lower() == 'bilinear':
+		descale1 = fvf.DebilinearM(src, w, h)
+	elif descalemode.lower() == 'spline16':
+		descale1 = fvf.Despline16M(src, w, h)
+	elif descalemode.lower() == 'spline36':
+		descale1 = fvf.Despline36M(src, w, h)
+	elif descalemode.lower() == 'lanczos':
+		if args_a < 2:
+			args_a = 3
+		descale1 = fvf.DelanczosM(src, w, h, taps=args_a)
+	else:
+		raise TypeError("descalemode '{}' doesn't exist, use bicubic or bilinear or spline16 or spline36 or lanczos".format(descalemode))
+	rpow = edi.nnedi3_rpow2(descale1,rfactor=2) #why not?
+	if yuv444:
+		if descalemode.lower() == 'bicubic':
+			rescale = fvf.DebicubicM(rpow, w, h, b=args_a, c=args_b, yuv444=True)
+		elif descalemode.lower() == 'bilinear':
+			rescale = fvf.DebilinearM(rpow, w, h, yuv444=True)
+		elif descalemode.lower() == 'spline16':
+			rescale = fvf.Despline16M(rpow, w, h, yuv444=True)
+		elif descalemode.lower() == 'spline36':
+			rescale = fvf.Despline36M(rpow, w, h, yuv444=True)
+		elif descalemode.lower() == 'lanczos':
+			if args_a < 2:
+				args_a = 3
+			rescale = fvf.DelanczosM(rpow, w, h, taps=args_a, yuv444=True)
+	else:
+		if descalemode.lower() == 'bicubic':
+			rescale = fvf.DebicubicM(rpow, w, h, b=args_a, c=args_b)
+		elif descalemode.lower() == 'bilinear':
+			rescale = fvf.DebilinearM(rpow, w, h)
+		elif descalemode.lower() == 'spline16':
+			rescale = fvf.Despline16M(rpow, w, h)
+		elif descalemode.lower() == 'spline36':
 			rescale = fvf.Despline36M(rpow, w, h)
+		elif descalemode.lower() == 'lanczos':
+			if args_a < 2:
+				args_a = 3
+			rescale = fvf.DelanczosM(rpow, w, h, taps=args_a)
 	return rescale
 
 #etc
