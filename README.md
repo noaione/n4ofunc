@@ -10,17 +10,14 @@ How to install:
 
 (stolen) Feature:
 - Deband (mSdeband, Sdeband, Mdeband, Hdeband)
-- KNLM (Mknlm, Hknlm) # Not Working Properly
-- BM3D (Nbm3d, Hbm3d)
 - SMDegrain (Nsmd, Hsmd)
 - AA, using vsTAAmbk (Nnedi3taa, eedi3taa, Ntaa, Htaa)
-- deblock
 - dehardsub
 - IVTC, Decimate, Resize to 720p (animu) [aliases: animu, ivtc]
 - hdr2sdr (experimental) [Hable Tonemapping Algorithm, should now provide better result] [Aliases: tonemap, hdr2sdr]
 - benchmark (random things, just put n4ofunc.benchmark(src) and you're done) [Aliases: autistCode, benchmark]
 - i444 meme (i444)
-- descale_rescale
+- descale_rescale [Aliases: rescale]
 - Hybrid denoise (S_hybriddenoise, M_hybriddenoise, H_hybriddenoise)
 
 Problem:
