@@ -32,3 +32,28 @@ Version rev:
 - Version 1.3: Added descale_rescale, reworked autistCode and renamed it to benchmark
 - Version 1.3.1: Fixed KNLMeansCL, some tweak and clean up
 - Version 1.4: Reworked hdr2sdr, now using hable tonemap algorithm that stolen from age@Doom9 with some additional command. Added some aliases
+
+
+### scenefilter.py
+
+```py
+import scenefilter as sfn
+
+v = core.ffms2.Source('clip.mkv')
+v = sfn.scene_filter(v, 30, 'mask_frame30.png', core.f3kdb.Deband, [12, 60, 40, 40], {'grainy': 15, 'grainc': 0, 'output_depth': 16}) 
+### Deband with range 12, y 60, cb/cr 40, grainy 15, grainc 0, and output_depth 10 for frame 30 with mask
+
+v.set_output()
+```
+
+Reference:
+- clip: Vapoursynth clip
+- mappings: Frame Mappings, can be a single frame (int or str) and multiple frames (tuple or list)
+- maskimg: Use a specified mask image to limit filtering area (Can be used or not)
+- fn_filter: Filter function to filter the clip provided, example: `core.f3kdb.Deband` (just put the function name)
+- filter_args: To adjust specified filter setting, for example for the f3kdb.Deband filter: `[12, 60, 40, 40]` (same as: range 12, y 60, cb/cr 40)
+- filter_kwargs: Same as `filter_args` but using dict-type, for example: `{'range': 12, 'y': 60, 'cb': 40, 'cr': 40}`
+
+Version rev:
+- Version 1.0: First commit
+- Version 1.1: Code improvement and some fixes, and now support multiple frame

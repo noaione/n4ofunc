@@ -1,11 +1,11 @@
 #####################################################################################
 #####################################################################################
-#########								    #########
-#########								    #########
-#########	          Scene filtering helper for easy use		    #########
-#########			   version 1.0 by N4O			    #########
-#########								    #########
-#########								    #########
+#########                                                                   #########
+#########                                                                   #########
+#########               Scene filtering helper for easy use                 #########
+#########                        version 1.1 by N4O                         #########
+#########                                                                   #########
+#########                                                                   #########
 #####################################################################################
 #####################################################################################
 #########
@@ -23,14 +23,14 @@
 #####################################################################################
 #########
 ######### Explanation:
-######### scene_filter(c=None, frame_num=None, maskimg=None, fn_filter=None, *args, **kwargs)
+######### scene_filter(clip=None, mappings=None, maskimg=None, fn_filter=None, filter_args=[], filter_kwargs={})
 #########
-######### c: clip
-######### frame_num: frame that you want to scene filter (limited to 1 frame only, use int)
-######### maskimg: Image Masking [Optional]
-######### fn_filter: Function to use (example, core.f3kdb.Deband) <-- type without `()` or as string
-######### *args: Argument for defined fn_filter
-######### **kwargs: Keyword Argument for defined fn_filter
+######### clip: Vapoursynth clip
+######### mappings: Frame Mappings, can be a single frame (int or str) and multiple frames (tuple or list)
+######### maskimg: Use a specified mask image to limit filtering area (Can be used or not)
+######### fn_filter: Filter function to filter the clip provided, example: `core.f3kdb.Deband` (just put the function name)
+######### filter_args: To adjust specified filter setting, for example for the f3kdb.Deband filter: `[12, 60, 40, 40]` (same as: range 12, y 60, cb/cr 40)
+######### filter_kwargs: Same as `filter_args` but using dict-type, for example: `{'range': 12, 'y': 60, 'cb': 40, 'cr': 40}`
 #########
 #####################################################################################
 #####################################################################################
@@ -43,51 +43,45 @@
 #####################################################################################
 #####################################################################################
 
-import vapoursynth as vs
-import fvsfunc as fvf
-import functools
 
-def scene_filter(c=None, frame_num=None, maskimg=None, fn_filter=None, *args, **kwargs):
-	core = vs.get_core() # Get Core
-
-	cbits = c.format.bits_per_sample # Check video bits
-	imfam = str(maskimg.format.color_family)[12:]
-	if frame_num is None:
-		raise ValueError('scene_filter: frame_num cannot be empty')
-	if isinstance(frame_num, int) or isinstance(frame_num, str):
-		frame_num = int(frame_num)
-	if c is None:
+def scene_filter(clip=None, mappings=None, maskimg=None, fn_filter=None, filter_args=[], filter_kwargs={}):
+	cbits = clip.format.bits_per_sample # Check video bits
+	if isinstance(mappings, int) or isinstance(mappings, str):
+		frame_collection = [int(mappings)]
+	elif isinstance(mappings, list) or isinstance(mappings, tuple):
+		frame_collection = []
+		for frame in mappings:
+			frame_collection.append(int(frame))
+	else:
+		raise ValueError('scene_filter: mappings can only be a single frame (integer) or multiple frame (list or tuple)')
+	if clip is None:
 		raise ValueError('scene_filter: `c` cannot be empty (must be a clip)')
-	elif not isinstance(c, vs.VideoNode):
+	elif not isinstance(clip, vs.VideoNode):
 		raise ValueError('scene_filter: `c` is not a clip')
-	if frame_num >= c.num_frames:
-		raise ValueError('scene_filter: frame_num cannot be more than \'{}\''.format(c.num_frames-1))
-	if not cbits == 16:
-		c = fvf.Depth(c, 16)
+	if clip.num_frames - 1 in mappings:
+		raise ValueError('scene_filter: mappings cannot be more than \'{}\''.format(clip.num_frames-1))
+	if cbits != 16:
+		clip = fvf.Depth(clip, 16)
 
-	if maskimg is None:
+	if maskimg is not None:
 		im = core.imwri.Read(maskimg) # Read image
 		usemask = True
 	else:
 		usemask = False
 
-	if imfam != 'YUV' and usemask:
-		im = core.resize.Spline36(clip=im, format=vs.YUV420P8, matrix_s="709") # Change to YUV if not YUV
-		im = core.std.ShufflePlanes(im, 0, vs.GRAY) # ShufflePlanes to GRAYSCALE
-		im = fvf.Depth(im, 16) # Dither to 16 bits
-	elif imfam == 'YUV' and usemask:
-		im = core.std.ShufflePlanes(im, 0, vs.GRAY) # ShufflePlanes to GRAYSCALE
+	if usemask:
+		im = core.resize.Spline36(clip=im, format=vs.GRAYS, matrix_s="709") # Change to GRAYS
 		im = fvf.Depth(im, 16) # Dither to 16 bits
 	else:
 		pass
 	
-	def _inner_filter(n):
-		if n < frame_num or n > frame_num:
-			return c # Return normal clip if not in `frame_num` range
-		ref = c # Set reference frames (not filtered)
-		fil = fn_filter(ref, *args, **kwargs) # Filter frame
+	def filter_frame(n, clp):
+		if n not in mappings:
+			return clp # Return normal clip if not in `mappings` range
+		ref = clp # Set reference frames (not filtered)
+		fil = fn_filter(ref, *filter_args, **filter_kwargs) # Filter frame
 		if usemask:
 			fil = core.std.MaskedMerge(fil, ref, im) # Use mask if applied
-		return fil # Return filtered frame_num
+		return fil # Return filtered frame
 
-	return core.std.FrameEval(c, _inner_filter) # Return 16 bits video
+	return core.std.FrameEval(clip, functools.partial(filter_frame, clp=clip)) # Return 16 bits video
