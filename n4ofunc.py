@@ -1,10 +1,7 @@
 import vapoursynth as vs
-import kagefunc as kgf
 import fvsfunc as fvf
+import havsfunc as haf
 import mvsfunc as mvf
-import vsTAAmbk as taa
-import fag3kdb as f3kdb
-import havsfunc as hvs
 import edi_rpow2 as edi
 from functools import partial
 
@@ -18,66 +15,6 @@ def to_plane_array(clip):
 	"""
 	return [core.std.ShufflePlanes(clip, x, colorfamily=vs.GRAY) for x in range(clip.format.num_planes)]
 
-#deband
-def mSdeband(optIN):
-	"""
-	optIN: Input video
-	Mini-mini version of Deband
-	"""
-	return f3kdb.Fag3kdb(optIN)
-def Sdeband(optIN):
-	"""
-	optIN: Input video
-	Mini version of Deband
-	"""
-	return f3kdb.Fag3kdb(optIN, radiusy=12, radiusc=8, thry=60, thrc=40, grainy=15, grainc=0)
-def Mdeband(optIN):
-	"""
-	optIN: Input video
-	Normal version of Deband
-	"""
-	return f3kdb.Fag3kdb(optIN, radiusy=18, radiusc=12, thry=60, thrc=50, grainy=15, grainc=0)
-def Hdeband(optIN):
-	"""
-	optIN: Input video
-	High version of Deband
-	"""
-	ref = optIN
-	out = optIN.f3kdb.Deband(range=14, y=60, cb=40, cr=40, grainy=15, grainc=0, output_depth=16)
-	mask = kgf.retinex_edgemask(ref).std.Binarize(5000).std.Inflate()
-	merged = core.std.MaskedMerge(out, ref, mask)
-	out = kgf.adaptive_grain(merged,0.20)
-	return out
-
-#denoise
-def Mknlm(optIN, gpu=0):
-	"""
-	optIN: Input video
-	Uses GPU for encoding
-	Normal/Medium version of KNLM
-	Better than SMDegrain, worse than BM3D
-	"""
-	return core.knlm.KNLMeansCL(optIN, a=2, h=0.25, d=3, channels="YUV", device_type='gpu', device_id=0)
-def Hknlm(optIN):
-	"""
-	optIN: Input video
-	Uses GPU for Encoding
-	High version of KNLM
-	Better than SMDegrain, worse than BM3D
-	"""
-	return core.knlm.KNLMeansCL(optIN, a=2, h=0.4, d=3, s=8, channels="YUV", device_type='gpu', device_id=0)
-def Nsmd(optIN):
-	"""
-	optIN: Input video
-	Normal/Medium version of SMDegrain
-	"""
-	return hvs.SMDegrain(optIN, tr=2,thSAD=50,thSADC=75)
-def Hsmd(optIN):
-	"""
-	optIN: Input video
-	High version of SMDegrain
-	"""
-	return hvs.SMDegrain(optIN, tr=2.3, thSAD=50, thSADC=75, prefilter=3, RefineMotion=True, search=4)
 def S_hybriddenoise(src, knl=0.4, tr=2, thsad=50, thsadc=75):
 	"""
 	src: video input
@@ -87,10 +24,11 @@ def S_hybriddenoise(src, knl=0.4, tr=2, thsad=50, thsadc=75):
 	using smdegrain for denoise luma and knlmeanscl for denoise chroma
 	"""
 	planes = to_plane_array(src)
-	planes[0] = hvs.SMDegrain(planes[0], tr=tr, thSAD=thsad, thSADC=thsadc, prefilter=3, RefineMotion=True, search=4)
+	planes[0] = haf.SMDegrain(planes[0], tr=tr, thSAD=thsad, thSADC=thsadc, prefilter=3, RefineMotion=True, search=4)
 	planes[1], planes[2] = [core.knlm.KNLMeansCL(plane, a=2, h=knl, d=3, s=8, device_type='gpu', device_id=0)
 							for plane in planes[1:]]
 	return core.std.ShufflePlanes(clips=planes, planes=[0, 0, 0], colorfamily=vs.YUV)
+
 def M_hybriddenoise(src, radius1=1, sigma=2, tr=2, thsad=50, thsadc=75):
 	"""
 	src: video input
@@ -100,10 +38,11 @@ def M_hybriddenoise(src, radius1=1, sigma=2, tr=2, thsad=50, thsadc=75):
 	using bm3d for denoise luma and smdegrain for denoise chroma
 	"""
 	planes = to_plane_array(src)
-	planes[0] = hvs.SMDegrain(planes[0], tr=tr, thSAD=thsad, thSADC=thsadc, prefilter=3, RefineMotion=True, search=4)
+	planes[0] = haf.SMDegrain(planes[0], tr=tr, thSAD=thsad, thSADC=thsadc, prefilter=3, RefineMotion=True, search=4)
 	planes[1], planes[2] = [mvf.BM3D(plane, radius1=radius1, sigma=sigma)
 							for plane in planes[1:]]
 	return core.std.ShufflePlanes(clips=planes, planes=[0, 0, 0], colorfamily=vs.YUV)
+
 def H_hybriddenoise(src, knl=0.4, sigma=2, radius1=1):
 	"""
 	src: video input
@@ -117,45 +56,6 @@ def H_hybriddenoise(src, knl=0.4, sigma=2, radius1=1):
 							for plane in planes[1:]]
 	return core.std.ShufflePlanes(clips=planes, planes=[0, 0, 0], colorfamily=vs.YUV)
 
-#anti-aliasing
-def Nnedi3taa(optIN, cycle=0):
-	"""
-	optIN: Input video
-	cycle = (0-1) - 1 is nightmare
-	Fast, and good enough
-	"""
-	return taa.TAAmbk(optIN,aatype='Nnedi3',cycle=cycle)
-def eedi3taa(optIN, cycle=0):
-	"""
-	optIN: Input video
-	cycle = (0-1) - 1 is nightmare
-	Slow, but really good, cycle is disabled default
-	"""
-	return taa.TAAmbk(optIN,aatype='Eedi3',cycle=cycle)
-def Ntaa(optIN):
-	"""
-	optIN: Input video
-	Normal kinda one, tho it may broke on some pc
-	"""
-	return taa.TAAmbk(optIN,aatype=1,mtype=1,strength=0.2,postaa=True,cycle=0)
-def Htaa(optIN): #pre-caution, lag.
-	"""
-	optIN: Input video
-	"""
-	return taa.TAAmbk(optIN,aatype=1,mtype=1,strength=0.3,postaa=True,cycle=1)
-
-#resize
-def i444(src, w: int, h: int):
-	"""
-	optIN: Input Video
-	w: Width Resolution
-	h: Height Resoulution
-	Hi444PP meme resize filter
-	"""
-	if w is not None and h is not None:
-		w = src.VideoNode.width if w is None else w
-		h = src.VideoNode.height if h is None else h
-	return fvf.Downscale444(src, w, h, kernely='blackmanminlobe', kerneluv='blackmanminlobe')
 def descale_rescale(src, w: int, h: int, yuv444=False, descalemode='bicubic', args_a='0.33', args_b='0.33'):
 	"""
 	src: Input video
@@ -172,8 +72,8 @@ def descale_rescale(src, w: int, h: int, yuv444=False, descalemode='bicubic', ar
 	Set w & h to native resolution, using debilinear descale for this, enable i444 if you want i444
 	"""
 	if w is not None and h is not None:
-		w = src.VideoNode.width if w is None else w
-		h = src.VideoNode.height if h is None else h
+		w = src.width if w is None else w
+		h = src.height if h is None else h
 	if descalemode.lower() == 'bicubic':
 		descale1 = fvf.DebicubicM(src, w, h, b=args_a, c=args_b)
 	elif descalemode.lower() == 'bilinear':
@@ -217,29 +117,22 @@ def descale_rescale(src, w: int, h: int, yuv444=False, descalemode='bicubic', ar
 			rescale = fvf.DelanczosM(rpow, w, h, taps=args_a)
 	return rescale
 
-#etc
-def dehardsub(softVideo, hardVideo):
+def ivtc_deint(clip, field=0, order=1, mode=3, nsize=4, use_gpu=True):
 	"""
-	softVideo: Soft-subbed video
-	hardVideo: Hard-subbed video
-	- tl;dr Dehardsubbing filter
+	Simple IVTC filter
 	"""
-	mask = kgf.hardsubmask(hardVideo,softVideo)
-	mask = fvf.Depth(mask, 16)
-	return core.std.MaskedMerge(hardVideo,softVideo,mask)
-
-def animu(optIN, field=1, order=1, mode=3):
-	"""
-	Anime IVTC filterino
-	optIN: Input Video
-	order: 0 is bottom field first, 1 is top field first
-	field: 1
-	mode: see this, http://www.vapoursynth.com/doc/plugins/vivtc.html
-	"""
-	ivtcanimu = [core.vivtc.VFM(optIN, order=order, mode=mode)]
-	dein = [core.nnedi3.nnedi3(ivtcanimu, field=field)]
-	animu = [core.vivtc.VDecimate(dein)]
-	return core.resize.Spline36(animu, 1280, 720, format=vs.YUV420P10)
+	def postprocess(n, f, clip, deinterlaced):
+	   if f.props['_Combed'] > 0:
+	      return deinterlaced
+	   else:
+	      return clip
+	clip = core.vivtc.VFM(clip, order=order, mode=mode)
+	if use_gpu:
+		clip_deinted = core.nnedi3cl.NNEDI3CL(clip, field=field, nsize=nsize)
+	else:
+		clip_deinted = core.nnedi3.nnedi3(clip, field=field, nsize=nsize)
+	clip = core.std.FrameEval(clip, partial(postprocess, clip=clip, deinterlaced=clip_deinted), prop_src=clip)
+	return core.vivtc.VDecimate(clip)
 
 def hdr2sdr(clip,peak=1000,desat=50,brightness=40,cont=1.05,lin=True,show_satmask=False,show_clipped=False):
 	import adjust
@@ -346,28 +239,186 @@ def hdr2sdr(clip,peak=1000,desat=50,brightness=40,cont=1.05,lin=True,show_satmas
 		c=adjust.Tweak(c,bright=brightness,cont=cont)
 	return c 
 
-def benchmark(optIN, w=1280, h=720):
-	"""
-	Sole PC test purpose lol
-	optIN is Video
-	w: width
-	h: height
-	default is 1280x720
-	"""
-	src = fvf.Depth(optIN, 16)
-	rpow = edi.nnedi3_rpow2(src,rfactor=2) #why not?
-	denoise = M_hybriddenoise(rpow)
-	deband = f3kdb.Fag3kdb(denoise, radiusy=12, radiusc=8, thry=60, thrc=40, grainy=15, grainc=0)
-	i444 = fvf.Downscale444(deband, w=w, h=h, kernely="blackmanminlobe", kerneluv="blackmanminlobe")
-	aa = taa.TAAmbk(i444,aatype='Eedi3',cycle=1)
-	finalmeme = fvf.Depth(aa, 10)
-	return finalmeme.set_output()
 
 #aliases
 tonemap = hdr2sdr
-autistCode = benchmark
-ivtc = animu
 rescale = descale_rescale
+
+
+######### Below here is mpeg2stinx script
+
+def spline36bob(src, process_chroma=True):
+	def bob(src):
+		src = src.resize.Spline36(width=src.width, height=src.height, format=vs.YUV420P8)
+		src = src.std.SeparateFields(True)[::2]
+		e = core.std.SelectEvery(src, cycle=2, offsets=0).resize.Spline36(width=src.width, height=2*src.height, src_left=0, src_top=0.25, src_width=src.width, src_height=src.height)
+		o = core.std.SelectEvery(src, cycle=2, offsets=1).resize.Spline36(width=src.width, height=2*src.height, src_left=0, src_top=-0.25, src_width=src.width, src_height=src.height)
+		return core.std.Interleave(clips=[e,o])
+	if str(src.format) == 'YUV420P8':
+		return bob(src)
+	else:
+		y = core.std.ShufflePlanes(clips=src, planes=0, colorfamily=vs.GRAY)
+		u = core.std.ShufflePlanes(clips=src, planes=1, colorfamily=vs.GRAY)
+		v = core.std.ShufflePlanes(clips=src, planes=2, colorfamily=vs.GRAY)
+		if process_chroma:
+			return core.std.ShufflePlanes([y,bob(u),bob(v)], planes=[0,0,0], colorfamily=vs.YUV)
+		else:
+			return core.std.ShufflePlanes([y,core.std.SelectEvery(u,cycle=1, offsets=[0,0]),core.std.SelectEvery(v,cycle=1, offsets=[0,0])], planes=[0,0,0], colorfamily=vs.YUV)
+
+def pointbob(src):
+	src = src.std.SeparateFields(True)[::2]
+	return core.resize.Point(src, src.width, 2*src.height)
+
+def median3(a,b,c,grey=True):
+	return core.std.Interleave([a, b, c]).rgvs.Clense(planes=[0, 1, 2] if grey is True else 0).std.SelectEvery(cycle=3, offsets=1)
+
+def crossfieldrepair(clip, sw=2, sh=2, bobbedClip=None, planes=0, chroma=True):
+	if (sw < 0 and sh < 0) or sw < 0 or sh < 0:
+		raise ValueError("crossfieldrepair: sw/sh cannot be a negative integers")
+	if not isinstance(clip, vs.VideoNode):
+		raise vs.Error("crossfieldrepair:\"clip\" not a clip")
+	if bobbedClip is None:
+		bobbedClip = spline36bob(clip, process_chroma=chroma)
+	bob_ex = haf.mt_expand_multi(bobbedClip, planes=1, sw=sw, sh=sh)
+	bob_in = haf.mt_inpand_multi(bobbedClip, planes=1, sw=sw, sh=sh)
+	if sw == 1 and sh == 1:
+		e = core.std.SelectEvery(bobbedClip, cycle=2, offsets=0)
+		o = core.std.SelectEvery(bobbedClip, cycle=2, offsets=1)
+		re = core.rgvs.Repair(bobbedClip,e,mode=[1])
+		ro = core.rgvs.Repair(bobbedClip,o,mode=[1])
+	else:
+		eX = core.std.SelectEvery(bob_ex, cycle=2, offsets=0)
+		oX = core.std.SelectEvery(bob_ex, cycle=2, offsets=1)
+		eI = core.std.SelectEvery(bob_in, cycle=2, offsets=0)
+		oI = core.std.SelectEvery(bob_in, cycle=2, offsets=1)
+		re = median3(bobbedClip,eX,oX, False)
+		ro = median3(bobbedClip,eI,oI, False)
+	res = core.std.Interleave(clips=[re,ro])
+	res = res.std.SeparateFields(True)[::2]
+	res = core.std.SelectEvery(res, cycle=4, offsets=[2,1])
+	res = res.std.DoubleWeave()[::2]
+	return res
+
+def maxyuv(c):
+	y = c.resize.Bicubic(width=c.width, height=c.height, format=vs.YUV420P8)
+	u = core.resize.Bicubic(core.std.ShufflePlanes(clips=c, planes=1, colorfamily=vs.GRAY), c.width, c.height, vs.YUV420P8)
+	v = core.resize.Bicubic(core.std.ShufflePlanes(clips=c, planes=2, colorfamily=vs.GRAY), c.width, c.height, vs.YUV420P8)
+	w = c.width
+	h = c.height
+
+	yc = core.resize.Bilinear(y, u.width, u.height)
+	ls = core.std.Expr([y, core.resize.Bilinear(u,w,h)], expr=['x y max']).std.Expr([y, core.resize.Bilinear(v,w,h)], expr=['x y max'])
+	cs = core.std.Expr([yc, u], expr=['x y max']).std.Expr([yc, v], expr=['x y max'])
+	return core.std.ShufflePlanes([cs, cs, ls], planes=[0,0,0], colorfamily=vs.YUV)
+
+def mpeg2stinx(src, mode=1, sw=1, sh=1, contra=True, blurv=0.0, sstr=2.0, scl=0.25, dither=False, order=0, diffscl=None):
+	#####################################################
+	###                                               ###
+	###        mpeg2stinx port for VapourSynth        ###
+	###                                               ###
+	###   		  ported by NoAiOne or N4O            ###
+	###   		  originally by torchlight            ###
+	###                                               ###
+	###                                               ###
+	#####################################################
+	### This filter is designed to eliminate certain combing-like compression artifacts 
+	### that show up all too often in hard-telecined MPEG-2 encodes, 
+	### and works to a smaller extent on bitrate-starved hard-telecined AVC encodes as well.
+	###
+	###
+	### +---------+
+	### |  USAGE  |
+	### +---------+
+	###
+	### mpeg2stinx(clip, mode, sw, sh, contra, blurv, sstr, scl, dither, order, diffscl)
+	###
+	### clip: video Source
+	### mode: Resizer used for interpolating fields to full size. (0 to 2)
+	### sw/sh: Parameters for the size of the rectangle on which to perform min/max clipping
+	### contra: Whether to use contrasharpening.
+	### blurv: How much vertical blur to apply.
+	### sstr: Contrasharpening strength.
+	### scl: Contrasharpening scale.
+	### dither: Whether to dither when averaging two clips.
+	### order: Field order to use for yadifmod.
+	### diffscl: If specified, temporal limiting is used, where the changes by crossfieldrepair 
+	### 		 are limited to diffscl times the difference between the current frame and its neighbours.
+
+	if not isinstance(src, vs.VideoNode):
+		raise ValueError('mpeg2stinx: src is not a video')
+	if sw < 0 or sh < 0:
+		raise ValueError('mpeg2stinx: sw/sh cannot be a negative integers')
+	if mode < 0 or mode > 3:
+		raise ValueError('mpeg2stinx: mode must be 0, 1 or 2')
+	if order < 0 or order > 2:
+		raise ValueError('mpeg2stinx: order must be 0, 1 or 2')
+	if diffscl is not None and diffscl >= 0:
+		raise ValueError('mpeg2stinx: diffscl must be a negative integers')
+	if contra:
+		blurv = 1.0
+	else:
+		blurv = 0.0
+
+	def deint(src, mode, order):
+		if mode == 0:
+			bobbed = pointbob(src)
+		elif mode == 1:
+			bobbed = spline36bob(src)
+		elif mode == 2:
+			bobbed = core.nnedi3.nnedi3(src,field=3)
+
+		if order == 0:
+			return bobbed
+		elif order == 1:
+			return core.std.SelectEvery(core.yadifmod.Yadifmod(src,order=0,mode=3,edeint=core.std.SelectEvery(bobbed, 2, [1,0])).selectevery(2,1,0),2,[1,0])
+		elif order == 2:
+			return core.yadifmod.Yadifmod(src,order=1,mode=3,edeint=bobbed)
+
+	def templimit(c, flt, ref, diffscl):
+		adj = ref.std.SelectEvery(2, [0, 1])
+		diff = core.std.Expr(core.std.SelectEvery(c, 3, [0,1]), adj, ["x y - abs"])
+		diff = core.std.SeparateFields(True)[::2]
+		diff = maxyuv(diff)
+		diff2 = core.std.Expr(core.std.SelectEvery(diff, 4, [0,1]), core.std.SelectEvery(diff,4, [2,3]), expr=["x y min"])
+		diff2 = haf.mt_expand_multi(diff2,sw=2,sh=1,planes=0)
+		diff2 = diff2.std.DoubleWeave()[::2]
+		a = core.misc.AverageFrames(clips=[c, diff2], weights=[1, -diffscl])
+		b = core.misc.AverageFrames(clips=[c, diff2], weights=[1, diffscl])
+		return median3(a,b,flt)
+
+	a = crossfieldrepair(src, sw=sw, sh=sh, bobbedClip=deint(src,mode,order))
+	if diffscl is not None:
+		a = templimit(src,a,src,diffscl)
+	b = crossfieldrepair(a,sw=sw,sh=sh,bobbedClip=deint(a,mode,order))
+	if diffscl is not None:
+		b = templimit(a,b,src,diffscl)
+
+	if dither:
+		dit = core.misc.AverageFrames(clips=[a,b], weights=[0.5,0.5])
+		dit = mvf.Depth(dit, dither=4)
+	else:
+		dit = core.misc.AverageFrames(clips=[a, b])
+
+	if blurv > 0.0:
+		nuked = core.std.BoxBlur(dit,hradius=1, vradius=blurv)
+	else:
+		nuked = dit
+	
+	nukedd = core.std.MakeDiff(src,nuked, [0,1,2])
+
+	sharp = core.std.Expr(nuked,core.std.BoxBlur(nuked,hradius=0,vradius=1).std.BoxBlur(nuked,hradius=0,vradius=0), expr=["x x y - {} * +".format(sstr)])
+	sharpd = core.std.Expr(nuked,core.std.BoxBlur(nuked,hradius=0,vradius=1).std.BoxBlur(nuked,hradius=0,vradius=0), expr=["x y - {} * 128 +".format(sstr)])
+	limd = core.std.Expr(sharpd,nukedd,expr=[f"x 128 - y 128 - * 0 < {scl} 1 ? x 128 - abs y 128 - abs < x y ? 128 - * 128 +"])
+
+	if scl == 0:
+		last = median3(nuked,sharp,src)
+	else:
+		last = core.std.MergeDiff(nuked,limd,[0,1,2])
+
+	if contra:
+		return last
+	else:
+		return nuked
 
 """
 (c) 2018 Autist version of N4O
