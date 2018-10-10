@@ -132,4 +132,4 @@ def scene_filter(clip=None, mappings=None, mask=None, fn_filter=None, filter_arg
 		ref = clip
 		fil = fn_filter(ref, *filter_args, **filter_kwargs)
 		return core.std.MaskedMerge(ref, fil, im)
-	return core.std.FrameEval(clip, functools.partial(filter_frame, clp=clip)) # Return 16 bits video
+	return core.std.FrameEval(clip, functools.partial(filter_frame, c=clip)) # Return 16 bits video
