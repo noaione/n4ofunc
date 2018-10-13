@@ -37,8 +37,8 @@ v = sfn.scene_filter(v, "30 [10 15]", 'mask_frame30.png', core.f3kdb.Deband, [12
 v.set_output()
 ```
 
-Supported mask:
-- b/w image mask
+**Supported mask**:
+- B/W image mask
 - .ass mask
 
 **Parameters:**
