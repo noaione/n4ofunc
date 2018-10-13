@@ -132,7 +132,8 @@ def ivtc_deint(clip, field=0, order=1, mode=3, nsize=4, use_gpu=True):
 	else:
 		clip_deinted = core.nnedi3.nnedi3(clip, field=field, nsize=nsize)
 	clip = core.std.FrameEval(clip, partial(postprocess, clip=clip, deinterlaced=clip_deinted), prop_src=clip)
-	return core.vivtc.VDecimate(clip)
+	clip = core.vivtc.VDecimate(clip)
+	return core.vinverse.Vinverse(clip)
 
 def hdr2sdr(clip,peak=1000,desat=50,brightness=40,cont=1.05,lin=True,show_satmask=False,show_clipped=False):
 	import adjust
