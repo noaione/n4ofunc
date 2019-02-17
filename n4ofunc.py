@@ -246,16 +246,16 @@ tonemap = hdr2sdr
 rescale = descale_rescale
 
 
-######### Below here is mpeg2stinx script
+######### Below here is mpeg2stinx script #########
 
-def spline36bob(src, process_chroma=True):
+def spline64bob(src, process_chroma=True):
 	def bob(src):
-		src = src.resize.Spline36(width=src.width, height=src.height, format=vs.YUV420P8)
+		src = src.fmtc.resample(w=src.width, h=src.height, kernel="spline64", css="420").fmtc.bitdepth(bits=8)
 		src = src.std.SeparateFields(True)[::2]
-		e = core.std.SelectEvery(src, cycle=2, offsets=0).resize.Spline36(width=src.width, height=2*src.height, src_left=0, src_top=0.25, src_width=src.width, src_height=src.height)
-		o = core.std.SelectEvery(src, cycle=2, offsets=1).resize.Spline36(width=src.width, height=2*src.height, src_left=0, src_top=-0.25, src_width=src.width, src_height=src.height)
+		e = core.std.SelectEvery(src, cycle=2, offsets=0).fmtc.resample(w=src.width, h=2*src.height, kernel="spline64", sx=0, sy=0.25, sw=src.width, sh=src.height).fmtc.bitdepth(bits=8)
+		o = core.std.SelectEvery(src, cycle=2, offsets=1).fmtc.resample(w=src.width, h=2*src.height, kernel="spline64", sx=0, sy=-0.25, sw=src.width, sh=src.height).fmtc.bitdepth(bits=8)
 		return core.std.Interleave(clips=[e,o])
-	if str(src.format) == 'YUV420P8':
+	if src.format == 'YUV420P8':
 		return bob(src)
 	else:
 		y = core.std.ShufflePlanes(clips=src, planes=0, colorfamily=vs.GRAY)
@@ -279,7 +279,7 @@ def crossfieldrepair(clip, sw=2, sh=2, bobbedClip=None, planes=0, chroma=True):
 	if not isinstance(clip, vs.VideoNode):
 		raise vs.Error("crossfieldrepair:\"clip\" not a clip")
 	if bobbedClip is None:
-		bobbedClip = spline36bob(clip, process_chroma=chroma)
+		bobbedClip = spline64bob(clip, process_chroma=chroma)
 	bob_ex = haf.mt_expand_multi(bobbedClip, planes=1, sw=sw, sh=sh)
 	bob_in = haf.mt_inpand_multi(bobbedClip, planes=1, sw=sw, sh=sh)
 	if sw == 1 and sh == 1:
@@ -364,7 +364,7 @@ def mpeg2stinx(src, mode=1, sw=1, sh=1, contra=True, blurv=0.0, sstr=2.0, scl=0.
 		if mode == 0:
 			bobbed = pointbob(src)
 		elif mode == 1:
-			bobbed = spline36bob(src)
+			bobbed = spline64bob(src)
 		elif mode == 2:
 			bobbed = core.nnedi3.nnedi3(src,field=3)
 
@@ -386,7 +386,7 @@ def mpeg2stinx(src, mode=1, sw=1, sh=1, contra=True, blurv=0.0, sstr=2.0, scl=0.
 		a = core.misc.AverageFrames(clips=[c, diff2], weights=[1, -diffscl])
 		b = core.misc.AverageFrames(clips=[c, diff2], weights=[1, diffscl])
 		return median3(a,b,flt)
-
+		
 	a = crossfieldrepair(src, sw=sw, sh=sh, bobbedClip=deint(src,mode,order))
 	if diffscl is not None:
 		a = templimit(src,a,src,diffscl)
@@ -398,7 +398,7 @@ def mpeg2stinx(src, mode=1, sw=1, sh=1, contra=True, blurv=0.0, sstr=2.0, scl=0.
 		dit = core.misc.AverageFrames(clips=[a,b], weights=[0.5,0.5])
 		dit = mvf.Depth(dit, dither=4)
 	else:
-		dit = core.misc.AverageFrames(clips=[a, b])
+		dit = core.misc.AverageFrames(clips=[a, b], weights=[1, 1])
 
 	if blurv > 0.0:
 		nuked = core.std.BoxBlur(dit,hradius=1, vradius=blurv)
@@ -420,8 +420,3 @@ def mpeg2stinx(src, mode=1, sw=1, sh=1, contra=True, blurv=0.0, sstr=2.0, scl=0.
 		return last
 	else:
 		return nuked
-
-"""
-(c) 2018 Autist version of N4O
-"""
-

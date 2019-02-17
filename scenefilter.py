@@ -69,25 +69,33 @@ import fvsfunc as fvf
 import functools
 import re
 
-core = vs.get_core()
-
-def scene_filter(clip=None, mappings=None, mask=None, fn_filter=None, filter_args=[], filter_kwargs={}):
-	if clip is None:
-		raise ValueError('scene_filter: `c` cannot be empty (must be a clip)')
-	elif not isinstance(clip, vs.VideoNode):
-		raise ValueError('scene_filter: `c` is not a clip')
-
+def scene_filter(clip=None, mappings=None, mask=None, fn_filter=None, filter_args=None, filter_kwargs=None):
+	core = vs.core # Init
+	class SceneFilterException(Exception): # Custom Exception
+		__module__ = Exception.__module__
+		
+	if not isinstance(clip, vs.VideoNode):
+		raise SceneFilterException('`clip` must be a clip (vapoursynth.VideoNode)')
+	
+	# Set default
+	if fn_filter is None:
+		raise SceneFilterException('`fn_filter` cannot be empty')
+	if filter_args is None:
+		filter_args = []
+	if filter_kwargs is None:
+		filter_kwargs = {}
+	maskfmt = None # Set as None so it doesn't broke
 	cbits = clip.format.bits_per_sample # Check video bits
-	cframes = clip.num_frames
+	cframes = clip.num_frames # Check total frames
+	
 	if mask is not None:
 		maskfmt = mask[mask.rfind('.'):len(mask)]
-
 	if cbits != 16:
 		clip = fvf.Depth(clip, 16)
 
 	if mappings is not None:
 		if not isinstance(mappings, str):
-			raise ValueError('scene_filter: `mappings` must be a string')
+			raise SceneFilterException('`mappings` must be a string')
 
 		_mappings = mappings.replace(',', ' ').replace(':', ' ')
 		frames = re.findall(r'\d+(?!\d*\s*\d*\s*\d*\])', _mappings) ### this part shamelessly stolen from fvsfun
@@ -104,32 +112,36 @@ def scene_filter(clip=None, mappings=None, mask=None, fn_filter=None, filter_arg
 				raise ValueError('scene_filter: Frame cannot be larger than: {} (Detected frame: {})'.format(cframes, frame))
 
 	if mask is not None and maskfmt != '.ass':
-		im = core.imwri.Read(mask) # Read image
-		im = core.std.ShufflePlanes(im, 1, colorfamily=vs.GRAY) # Change to GRAYS
-		im = fvf.Depth(im, 16) # Dither to 16 bits
-		im = core.std.BoxBlur(im, hradius=5, vradius=5) # Blur the edge
-		usemask = True
+		sk = core.imwri.Read(mask) # Read image
+		sk = core.std.ShufflePlanes(sk, 1, colorfamily=vs.GRAY) # Change to GRAYS
+		sk = fvf.Depth(sk, 16) # Dither to 16 bits
+		sk = core.std.BoxBlur(sk, hradius=5, vradius=5) # Blur the edge
 	elif mask is not None and maskfmt == '.ass':
 		bclip = core.std.BlankClip(width=clip.width, height=clip.height, length=cframes) # Create blank black clip
-		im = core.sub.TextFile(bclip, mask).std.Binarize() # Merge .ass mask to the blank clip
-		im = core.std.ShufflePlanes(im, 1, colorfamily=vs.GRAY) # Change to GRAYS
-		im = fvf.Depth(im, 16) # Dither to 16 bits
-		im = core.std.BoxBlur(im, hradius=5, vradius=5) # Blur the edge
-		usemask = True
+		sk = core.sub.TextFile(bclip, mask).std.Binarize() # Merge .ass mask to the blank clip
+		sk = core.std.ShufflePlanes(sk, 1, colorfamily=vs.GRAY) # Change to GRAYS
+		sk = fvf.Depth(sk, 16) # Dither to 16 bits
+		sk = core.std.BoxBlur(sk, hradius=5, vradius=5) # Blur the edge
 	else:
-		usemask = False
+		sk = None
 	
-	def filter_frame(n, c):
+	def filter_frame(n, c, _fn, _fargs, _fkwargs, ma):
 		if n not in mappings:
 			return c # Return normal clip if not in `mappings` range
 		ref = c # Set reference frames (not filtered)
-		fil = fn_filter(ref, *filter_args, **filter_kwargs) # Filter frame
-		if usemask:
-			fil = core.std.MaskedMerge(ref, fil, im) # Use mask if applied
+		try:
+			fil = _fn(ref, *_fargs, **_fkwargs) # Filter frame
+		except vs.Error as err:
+			raise SceneFilterException('filter_frame: `fn_filter` defined not found or args and kwargs are undefined\nOriginal Exception: {}'.format(err))
+		if ma:
+			fil = core.std.MaskedMerge(ref, fil, ma) # Use mask if applied
 		return fil # Return filtered frame
 
 	if maskfmt == '.ass':
 		ref = clip
-		fil = fn_filter(ref, *filter_args, **filter_kwargs)
-		return core.std.MaskedMerge(ref, fil, im)
-	return core.std.FrameEval(clip, functools.partial(filter_frame, c=clip)) # Return 16 bits video
+		try:
+			fil = fn_filter(ref, *filter_args, **filter_kwargs) # Filter with mask
+		except vs.Error as err:
+			raise SceneFilterException('filter_frame: `fn_filter` defined not found or args and kwargs are undefined\nOriginal Exception: {}'.format(err))
+		return core.std.MaskedMerge(ref, fil, sk)
+	return core.std.FrameEval(clip, functools.partial(filter_frame, c=clip, _fn=fn_filter, _fargs=filter_args, _fkwargs=filter_kwargs, ma=sk))
