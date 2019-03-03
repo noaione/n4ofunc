@@ -2,6 +2,7 @@ import vapoursynth as vs
 import fvsfunc as fvf
 import havsfunc as haf
 import mvsfunc as mvf
+import kagefunc as kgf
 import edi_rpow2 as edi
 from functools import partial
 
@@ -14,6 +15,112 @@ def to_plane_array(clip):
 	Stolen from Kageru function
 	"""
 	return [core.std.ShufflePlanes(clip, x, colorfamily=vs.GRAY) for x in range(clip.format.num_planes)]
+	
+def iterate(vid, filter, amount):
+	if amount == 0:
+		return vid
+	for _ in range(amount):
+		vid = filter(vid)
+	return vid
+	
+def splitYUV(src):
+	return [core.std.ShufflePlanes(src, x, colorfamily=vs.GRAY) for x in range(src.format.num_planes)]
+	
+def getY(src):
+	return core.std.ShufflePlanes(src, 0, vs.GRAY)
+
+###################################################################
+# Dehalo filter based on Dehalo_alpha and custom simple mask
+###################################################################
+# rx, ry [float, 1.0 ... 2.0 ... ~3.0]
+# As usual, the radii for halo removal.
+# Note: this function is rather sensitive to the radius settings. Set it as low as possible! If radius is set too high, it will start missing small spots.
+#
+# darkkstr, brightstr [float, 0.0 ... 1.0] [<0.0 and >1.0 possible]
+# The strength factors for processing dark and bright halos. Default 1.0 both for symmetrical processing.
+# On Comic/Anime, darkstr=0.4~0.8 sometimes might be better ... sometimes. In General, the function seems to preserve dark lines rather good.
+#
+# lowsens, highsens [int, 0 ... 50 ... 100]
+# Sensitivity settings, not that easy to describe them exactly ...
+# In a sense, they define a window between how weak an achieved effect has to be to get fully accepted, and how strong an achieved effect has to be to get fully discarded.
+# Defaults are 50 and 50 ... try and see for yourself.
+#
+# ss [float, 1.0 ... 1.5 ...]
+# Supersampling factor, to avoid creation of aliasing.
+#
+# thr [int, 1 ... 65535]
+# Maximum threshold factor
+# Recommended: 15000+
+# Max: Clip Sample Value (65535)
+#
+def nDeHalo(clp=None, rx=None, ry=None, darkstr=None, brightstr=None, lowsens=None, highsens=None, ss=None, thr=None):
+	import math
+
+	def m4(x):
+		return 16 if x < 16 else math.floor(x / 4 + 0.5) * 4
+	def scale(value, peak):
+		return value * peak // 255
+
+	# Defaults
+	rx = 2. if rx is None else rx
+	ry = 2. if ry is None else ry
+	darkstr = 1. if darkstr is None else darkstr
+	brightstr = 1. if brightstr is None else brightstr
+	lowsens = 50 if lowsens is None else lowsens
+	highsens = 50 if highsens is None else highsens
+	ss = 1.5 if ss is None else ss
+	thr = 65535 if thr is None else thr
+
+	# Error Check
+	if not isinstance(clp, vs.VideoNode):
+		raise ValueError("nDeHalo: This is not a clip")
+	if thr > 65535:
+		raise ValueError("nDeHalo: thr cannot exceed 65535: {x}".format(x=thr))
+	
+	# Mask creation
+	sx = clp.std.Convolution([-1, -2, -1, 0, 0, 0, 1, 2, 1], saturate=False)
+	sy = clp.std.Convolution([-1, 0, 1, -2, 0, 2, -1, 0, 1], saturate=False)
+	inner = core.std.Expr([sx, sy], 'x y max').std.ShufflePlanes(0, vs.GRAY)
+	outer = inner.std.Maximum(threshold=thr)
+	mask = core.std.Expr([outer, inner], 'x y -')
+	
+	peak = (1 << clp.format.bits_per_sample) - 1
+	
+	# Initial Check
+	if clp.format.color_family != vs.GRAY:
+		clp_orig = clp
+		clp = core.std.ShufflePlanes(clp, 0, vs.GRAY)
+	else:
+		clp_orig = None
+	
+	ox = clp.width
+	oy = clp.height
+	
+	# DeHalo
+	halos = core.resize.Bicubic(clp, m4(ox / rx), m4(oy / ry)).resize.Bicubic(ox, oy, filter_param_a=1, filter_param_b=0)
+	are = core.std.Expr([core.std.Maximum(clp), core.std.Minimum(clp)], ['x y -'])
+	ugly = core.std.Expr([core.std.Maximum(halos), core.std.Minimum(halos)], ['x y -'])
+	expr = 'y x - y / {peak} * {LOS} - y {i} + {j} / {HIS} + *'.format(peak=peak, LOS=scale(lowsens, peak), i=scale(256, peak), j=scale(512, peak), HIS=highsens / 100)
+	so = core.std.Expr([ugly, are], [expr])
+	lets = core.std.MaskedMerge(halos, clp, so)
+	if ss <= 1:
+		remove = core.rgvs.Repair(clp, lets, 1)
+	else:
+		remove = core.std.Expr([core.std.Expr([core.resize.Spline36(clp, m4(ox * ss), m4(oy * ss)),
+                                               core.std.Maximum(lets).resize.Bicubic(m4(ox * ss), m4(oy * ss))],
+                                              ['x y min']),
+                                core.std.Minimum(lets).resize.Bicubic(m4(ox * ss), m4(oy * ss))],
+                               ['x y max']).resize.Spline36(ox, oy)
+	them = core.std.Expr([clp, remove], ['x y < x x y - {DRK} * - x x y - {BRT} * - ?'.format(DRK=darkstr, BRT=brightstr)])
+	
+	# Merge
+	if clp_orig is not None:
+		final = core.std.ShufflePlanes([them, clp_orig], planes=[0, 1, 2], colorfamily=clp_orig.format.color_family)
+		fc = clp_orig
+	else:
+		final = them
+		fc = clp
+	return core.std.MaskedMerge(fc, final, mask)
 
 def S_hybriddenoise(src, knl=0.4, tr=2, thsad=50, thsadc=75):
 	"""
@@ -55,7 +162,51 @@ def H_hybriddenoise(src, knl=0.4, sigma=2, radius1=1):
 	planes[1], planes[2] = [core.knlm.KNLMeansCL(plane, a=2, h=knl, d=3, s=8, device_type='gpu', device_id=0)
 							for plane in planes[1:]]
 	return core.std.ShufflePlanes(clips=planes, planes=[0, 0, 0], colorfamily=vs.YUV)
+	
+def adaptive_smdegrain(src, thSAD=None, thSADC=None, luma_scaling=None, area='light', show_mask=False):
+	if thSAD is None:
+		thSAD = 150
+	if thSADC is None:
+		thSADC = thSAD
+	
+	if luma_scaling is None:
+		luma_scaling = 30
+	
+	if area != 'light' and area != 'dark':
+		raise ValueError('n4ofunc.adaptive_smdegrain: `area` can only be: `light` and `dark`')
+	
+	adaptmask = kgf.adaptive_grain(src, luma_scaling=luma_scaling, show_mask=True)
+	
+	Yplane = getY(src)
+	
+	if area == 'light':
+		adaptmask = adaptmask.std.Invert()
+		
+	limitx = Yplane.std.Convolution([-1, -2, -1, 0, 0, 0, 1, 2, 1], saturate=False)
+	limity = Yplane.std.Convolution([-1, 0, 1, -2, 0, 2, -1, 0, 1], saturate=False)
+	limit = core.std.Expr([limitx, limity], 'x y max')
+	
+	mask = core.std.Expr([adaptmask, limit], 'x y -')
 
+	if show_mask:
+		return mask
+
+	fil = haf.SMDegrain(src, thSAD=thSAD, thSADC=thSADC)
+
+	return core.std.MaskedMerge(src, fil, mask)
+	
+def antiedgemask(src, iter=1):
+	w = src.width
+	h = src.height
+	
+	Yplane = getY(src)
+	
+	whiteclip = core.std.BlankClip(src, width=w, height=h, color=[255, 255, 255]).std.ShufflePlanes(0, vs.GRAY)
+	edgemask = core.std.Sobel(Yplane)
+	edgemask = iterate(edgemask, core.std.Maximum, iter)
+	
+	return core.std.Expr([whiteclip, edgemask], 'x y -')
+	
 def descale_rescale(src, w: int, h: int, yuv444=False, descalemode='bicubic', args_a='0.33', args_b='0.33'):
 	"""
 	src: Input video
