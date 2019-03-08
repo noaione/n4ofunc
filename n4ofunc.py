@@ -322,11 +322,13 @@ def hdr2sdr(clip, peak=1000, desat=50, brightness=40, cont=1.05, lin=True, show_
     c = core.resize.Bicubic(clip=c, format=vs.YUV420P10, filter_param_a=0.0, filter_param_b=1.0, matrix_s="709", primaries_in_s="2020", primaries_s="709", transfer_in_s="linear", transfer_s="709", dither_type="ordered")
 
     #some adjustment
-    if brightness < 0:
+    if brightness > 0:
         if cont < 0:
             cont = 1.05
-        if cont > 100:
+        elif cont > 100:
             cont = 100
+		if brightness > 100:
+			brightness = 100
         c = adjust.Tweak(c, bright=brightness, cont=cont)
     return c
 
