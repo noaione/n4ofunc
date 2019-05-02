@@ -1,32 +1,38 @@
-from vapoursynth import core
+from functools import partial
 
-import vapoursynth as vs
+import nnedi3_rpow2 as edi
 import fvsfunc as fvf
 import havsfunc as haf
-import mvsfunc as mvf
 import kagefunc as kgf
-import edi_rpow2 as edi
+import mvsfunc as mvf
+import vapoursynth as vs
+
+from MaskDetail import maskDetail
+from vapoursynth import core
+from vsutil import get_y, is_image, iterate, split, get_w
+from math import ceil, log
 
 #helper
-def to_plane_array(clip):
+def is_extension(x, y):
     """
-    Stolen from Kageru function
+    Return a boolean if extension are the same or not
+    `x` are lowered/downcased
     """
-    return [core.std.ShufflePlanes(clip, x, colorfamily=vs.GRAY) for x in range(clip.format.num_planes)]
+    return x.lower()[x.lower().rfind('.'):] == y
 
-def iterate(vid, filter, amount):
-    """
-    Loop through filter
-    """
-    for _ in range(amount):
-        vid = filter(vid)
-    return vid
 
-def get_y(src):
+def register_f(c: vs.VideoNode, yuv444=False) -> vs.VideoNode.format:
     """
-    Return Y planes
+    Return a registered new format
     """
-    return core.std.ShufflePlanes(src, 0, vs.GRAY)
+    return core.register_format(
+        c.format.color_family,
+        c.format.sample_type,
+        c.format.bits_per_sample,
+        0 if yuv444 else c.format.subsampling_w,
+        0 if yuv444 else c.format.subsampling_w
+    )
+
 
 def nDeHalo(clp=None, rx=None, ry=None, darkstr=None, brightstr=None, lowsens=None, highsens=None, ss=None, thr=None):
     """
@@ -121,7 +127,78 @@ def nDeHalo(clp=None, rx=None, ry=None, darkstr=None, brightstr=None, lowsens=No
         fc = clp
     return core.std.MaskedMerge(fc, final, mask)
 
-def adaptive_smdegrain(src, thSAD=None, thSADC=None, luma_scaling=None, area='light', show_mask=False):
+
+def save_difference(src1, src2, threshold=0.1):
+    """
+    n4ofunc.save_difference
+
+    Save a difference between src1 and src2
+    Useful for comparing between TV and BD
+
+    :src1 vapoursynth.VideoNode: Video Source 1 as the "old" video
+    :src2 vapoursynth.VideoNode: Video Source 2 as the "new" video
+    :threshold float: Luma threshold between src1 and src2
+    """
+    import cv2
+    import numpy as np
+    import os
+    import shutil
+
+    src1_cf = src1.format.color_family
+    src2_cf = src2.format.color_family
+    src1_bits = src1.format.bits_per_sample
+    src2_bits = src2.format.bits_per_sample
+
+    if src1.num_frames != src2.num_frames:
+        raise ValueError('src1 and src2 frame are not the same')
+
+    def save_as_image(vid, frame, output_format):
+        vid = vid.get_frame(frame)
+        planes = vid.format.num_planes
+        v = cv2.merge([np.array(vid.get_read_array(i), copy=False) for i in reversed(range(planes))])
+        v = cv2.resize(v, (1280, 720))
+        cv2.imwrite(output_format.format(frame), v)
+
+    cwd = os.getcwd()
+    dirsave = cwd + '\\frame_difference'
+    print('@@ save_difference: starting process')
+
+    if not os.path.isdir(dirsave):
+        os.mkdir(dirsave)
+
+    if src1_cf != vs.RGB:
+        src1 = mvf.ToRGB(src1)
+    if src2_cf != vs.RGB:
+        src2 = mvf.ToRGB(src2)
+
+    print('Converted to RGB')
+
+    if src1_bits != 8:
+        src1 = fvf.Depth(src1, 8)
+    if src2_bits != 8:
+        src2 = fvf.Depth(src2, 8)
+
+    src1_gray = src1.std.ShufflePlanes(0, vs.GRAY)
+    src2_gray = src2.std.ShufflePlanes(0, vs.GRAY)
+    print('grayed')
+
+    n = 0
+    for i, f in enumerate(core.std.PlaneStats(src1_gray, src2_gray).frames()):
+        print('@@ save_difference: Processing Frame {}/{} ({})'.format(i, src1_gray.num_frames, f.props["PlaneStatsDiff"]), end='\r')
+        if f.props["PlaneStatsDiff"] >= threshold:
+            print('@@ save_difference: Diff frame: {}'.format(i), end='\r\n')
+            save_as_image(src1, i, dirsave + '\\{}_src1.png')
+            save_as_image(src2, i, dirsave + '\\{}_src2.png')
+            n += 1
+
+    if n == 0:
+        print('@@ save_difference: no significant difference found from current threshold')
+        shutil.rmtree(dirsave)
+
+    return
+
+
+def adaptive_smdegrain(src, thSAD=None, thSADC=None, luma_scaling=None, area='light', iter_edge=0, show_mask=False):
     """
     Some adaptive degrain that will degrain according to area determined (will not affect lineart)
     """
@@ -133,19 +210,20 @@ def adaptive_smdegrain(src, thSAD=None, thSADC=None, luma_scaling=None, area='li
     if luma_scaling is None:
         luma_scaling = 30
 
-    if area != 'light' and area != 'dark':
+    if area not in ['dark', 'light']:
         raise ValueError('n4ofunc.adaptive_smdegrain: `area` can only be: `light` and `dark`')
 
     adaptmask = kgf.adaptive_grain(src, luma_scaling=luma_scaling, show_mask=True)
 
-    Yplane = get_y(src)
+    y_plane = get_y(src)
 
     if area == 'light':
         adaptmask = adaptmask.std.Invert()
 
-    limitx = Yplane.std.Convolution([-1, -2, -1, 0, 0, 0, 1, 2, 1], saturate=False)
-    limity = Yplane.std.Convolution([-1, 0, 1, -2, 0, 2, -1, 0, 1], saturate=False)
+    limitx = y_plane.std.Convolution([-1, -2, -1, 0, 0, 0, 1, 2, 1], saturate=False)
+    limity = y_plane.std.Convolution([-1, 0, 1, -2, 0, 2, -1, 0, 1], saturate=False)
     limit = core.std.Expr([limitx, limity], 'x y max')
+    limit = iterate(limit, core.std.Maximum, iter_edge)
 
     mask = core.std.Expr([adaptmask, limit], 'x y -')
 
@@ -156,183 +234,316 @@ def adaptive_smdegrain(src, thSAD=None, thSADC=None, luma_scaling=None, area='li
 
     return core.std.MaskedMerge(src, fil, mask)
 
-def antiedgemask(src, iter=1):
+
+def antiedgemask(src, iteration=1):
     """
-    Make some anti-edge mask that use whiteclip and Sobel and minus them together
+    Make some anti-edge mask that use whiteclip and Sobel mask and minus them together
     """
     w = src.width
     h = src.height
 
-    Yplane = get_y(src)
+    y_plane = get_y(src)
 
     whiteclip = core.std.BlankClip(src, width=w, height=h, color=[255, 255, 255]).std.ShufflePlanes(0, vs.GRAY)
-    edgemask = core.std.Sobel(Yplane)
-    edgemask = iterate(edgemask, core.std.Maximum, iter)
+    edgemask = core.std.Sobel(y_plane)
+    edgemask = iterate(edgemask, core.std.Maximum, iteration)
 
     return core.std.Expr([whiteclip, edgemask], 'x y -')
 
-def descale_rescale(src, w: int, h: int, yuv444=False, descalemode='bicubic', args_a='0.33', args_b='0.33'):
+
+def masked_descale(src, target_w=None, target_h=None, kernel='bicubic', b=1/3, c=1/3, taps=3, yuv444=False, expandN=2, inflateN=1, iter_max=1, masked=True, show_mask=False) -> vs.VideoNode:
+    if not src:
+        raise ValueError('src cannot be empty')
+    if not target_w:
+        raise ValueError('target_w cannot be empty')
+    if not target_h:
+        raise ValueError('target_h cannot be empty')
+
+    iter_max -= 1
+
+    if iter_max < 0:
+        raise ValueError('iter_max cannot be negative integer')
+
+    kernel = kernel.lower()
+
+    if kernel not in ['bicubic', 'bilinear', 'lanczos', 'spline16', 'spline36']:
+        raise ValueError('Kernel type doesn\'t exist\nAvailable one: bicubic, bilinear, lanczos, spline16, spline36')
+
+    def VideoResizer(b, c, taps, kernel):
+        if kernel == 'bilinear':
+            return core.resize.Bilinear
+        elif kernel == 'bicubic':
+            return partial(core.resize.Bicubic, filter_param_a=b, filter_param_b=c)
+        elif kernel == 'lanczos':
+            return partial(core.resize.Lanczos, filter_param_a=taps)
+        elif kernel == 'spline16':
+            return core.resize.Spline16
+        elif kernel == 'spline36':
+            return core.resize.Spline36
+
+    def DescaleVideo(src, width, height, kernel='bilinear', b=1/3, c=1/3, taps=3, yuv444=False, gray=False, chromaloc=None):
+        #####################################
+        ##                                 ##
+        ##  Source code from `descale.py`  ##
+        ##                                 ##
+        #####################################
+        def get_filter(b, c, taps, kernel):
+            if kernel.lower() == 'bilinear':
+                return core.descale.Debilinear
+            elif kernel.lower() == 'bicubic':
+                return partial(core.descale.Debicubic, b=b, c=c)
+            elif kernel.lower() == 'lanczos':
+                return partial(core.descale.Delanczos, taps=taps)
+            elif kernel.lower() == 'spline16':
+                return core.descale.Despline16
+            elif kernel.lower() == 'spline36':
+                return core.descale.Despline36
+        src_f = src.format
+        src_cf = src_f.color_family
+        src_st = src_f.sample_type
+        src_bits = src_f.bits_per_sample
+        src_sw = src_f.subsampling_w
+        src_sh = src_f.subsampling_h
+
+        descale_filter = get_filter(b, c, taps, kernel)
+
+        if src_cf == vs.RGB and not gray:
+            rgb = descale_filter(src.resize.Point(format=vs.RGBS), width, height)
+            return rgb.resize.Point(format=src_f.id)
+
+        y = descale_filter(src.resize.Point(format=vs.GRAYS), width, height)
+        y_f = core.register_format(vs.GRAY, src_st, src_bits, 0, 0)
+        y = y.resize.Point(format=y_f.id)
+
+        if src_cf == vs.GRAY or gray:
+            return y
+
+        if not yuv444 and ((width % 2 and src_sw) or (height % 2 and src_sh)):
+            raise ValueError('Descale: The output dimension and the subsampling are incompatible.')
+
+        uv_f = register_f(src, yuv444)
+        uv = src.resize.Spline36(width, height, format=uv_f.id, chromaloc_s=chromaloc)
+
+        return core.std.ShufflePlanes([y,uv], [0,1,2], vs.YUV)
+
+    descale = DescaleVideo(src, target_w, target_h, kernel, b, c, taps, yuv444)
+    descale_format = register_f(descale, yuv444)
+    VidResize = VideoResizer(b, c, taps, kernel)
+    nr_resize = VidResize(src, target_w, target_h, format=descale_format.id)
+
+    video_mask = maskDetail(src, target_w, target_h, expandN=expandN, inflateN=inflateN, kernel=kernel)
+    video_mask = iterate(video_mask, core.std.Maximum, iter_max)
+
+    if show_mask:
+        return video_mask
+
+    if masked:
+        return core.std.MaskedMerge(descale, nr_resize, video_mask)
+    return descale
+
+
+def source(src, lsmas=False, depth=False, trims=None, dither_yuv=True) -> vs.VideoNode:
     """
-    src: Input video
-    w: Width (int)
-    h: Height (int)
-    yuv444: True/False (bool)
-    descalemode: bicubic, bilinear, spline16. spline36, lanczos(str)
-    args_a: Available only for bicubic and lanczos
-        - bicubic: b
-        - lanczos: taps
-    args_b: Available only for bicubic
-        - bicubic: c
-    Some descale -> upscale -> descale filter.
-    Set w & h to native resolution, using debilinear descale for this, enable i444 if you want i444
+    Open Video or Image Source
+    :param src: Video or Image source (format: string)
+    :param lsmas: force use lsmas (file with .m2ts extension will forced to use lsmas)
+    :param depth: Dither video (Disable with False, default: False (Use original bitdepth))
+    :param trims: Trim video (Integer + List type)
+    :param dither_yuv: Dither Image or Video to YUV subsample
     """
-    if w is not None and h is not None:
-        w = src.width if w is None else w
-        h = src.height if h is None else h
-    if descalemode.lower() == 'bicubic':
-        descale1 = fvf.DebicubicM(src, w, h, b=args_a, c=args_b)
-    elif descalemode.lower() == 'bilinear':
-        descale1 = fvf.DebilinearM(src, w, h)
-    elif descalemode.lower() == 'spline16':
-        descale1 = fvf.Despline16M(src, w, h)
-    elif descalemode.lower() == 'spline36':
-        descale1 = fvf.Despline36M(src, w, h)
-    elif descalemode.lower() == 'lanczos':
-        if args_a < 2:
-            args_a = 3
-        descale1 = fvf.DelanczosM(src, w, h, taps=args_a)
-    else:
-        raise TypeError("descalemode '{}' doesn't exist, use bicubic or bilinear or spline16 or spline36 or lanczos".format(descalemode))
-    rpow = edi.nnedi3_rpow2(descale1, rfactor=2) #why not?
-    if yuv444:
-        if descalemode.lower() == 'bicubic':
-            rescale = fvf.DebicubicM(rpow, w, h, b=args_a, c=args_b, yuv444=True)
-        elif descalemode.lower() == 'bilinear':
-            rescale = fvf.DebilinearM(rpow, w, h, yuv444=True)
-        elif descalemode.lower() == 'spline16':
-            rescale = fvf.Despline16M(rpow, w, h, yuv444=True)
-        elif descalemode.lower() == 'spline36':
-            rescale = fvf.Despline36M(rpow, w, h, yuv444=True)
-        elif descalemode.lower() == 'lanczos':
-            if args_a < 2:
-                args_a = 3
-            rescale = fvf.DelanczosM(rpow, w, h, taps=args_a, yuv444=True)
-    else:
-        if descalemode.lower() == 'bicubic':
-            rescale = fvf.DebicubicM(rpow, w, h, b=args_a, c=args_b)
-        elif descalemode.lower() == 'bilinear':
-            rescale = fvf.DebilinearM(rpow, w, h)
-        elif descalemode.lower() == 'spline16':
-            rescale = fvf.Despline16M(rpow, w, h)
-        elif descalemode.lower() == 'spline36':
-            rescale = fvf.Despline36M(rpow, w, h)
-        elif descalemode.lower() == 'lanczos':
-            if args_a < 2:
-                args_a = 3
-            rescale = fvf.DelanczosM(rpow, w, h, taps=args_a)
-    return rescale
+    def parse_trim_data(trim_data, video):
+        a, b = trim_data
 
-def hdr2sdr(clip, peak=1000, desat=50, brightness=40, cont=1.05, lin=True, show_satmask=False, show_clipped=False):
-    import adjust
+        if a == 'black24':
+            a = 24
+        if b == 'black24':
+            b = video.num_frames - 25
+
+        if a == 'black12':
+            a = 12
+        if b == 'black12':
+            b = video.num_frames - 13
+
+        # Every retarded streaming sites ever
+        if a == 'funi':
+            a = 240
+        if b == 'sentai':
+            b = video.num_frames - 1458 # May be changed idk
+
+        if b == 'last':
+            b = video.num_frames - 1
+
+        if b < 0:
+            b = video.num_frames - (abs(b) + 1)
+
+        return a, b
+
+
+    if not isinstance(lsmas, bool):
+        return ValueError('lsmas: boolean only (True or False)')
+    if not isinstance(src, str):
+        return ValueError('src: must be string input')
+
+    if not isinstance(src, vs.VideoNode) and is_extension(src, '.d2v'):
+        src = core.d2v.Source(src)
+
+    if not isinstance(src, vs.VideoNode) and is_extension(src, '.avi'):
+        src = core.avisource.AVISource(src)
+
+    if not isinstance(src, vs.VideoNode) and is_image(src):
+        src = core.imwri.Read(src)
+
+    if  not isinstance(src, vs.VideoNode) and is_extension(src, '.m2ts') or not isinstance(src, vs.VideoNode) and is_extension(src, '.ts'): # force lsmas
+        lsmas = True
+
+    if  not isinstance(src, vs.VideoNode) and lsmas:
+        src = core.lsmas.LWLibavSource(src)
+    elif not isinstance(src, vs.VideoNode) and not lsmas:
+        src = core.ffms2.Source(src)
+
+    if dither_yuv and src.format.color_family != vs.YUV:
+        src = core.resize.Point(src, format=vs.YUV420P8, matrix_s='709')
+
+    if depth:
+        src = fvf.Depth(src, depth)
+    if trims:
+        first, last = parse_trim_data(trims, src)
+        return core.std.Trim(src, first, last)
+    return src
+
+
+def adaptive_scaling(clip: vs.VideoNode, target_w=None, target_h=None, descale_range=[], kernel='bicubic', b=1/3, c=1/3, taps=3, iter_max=3, rescale=True, show_native_res=False, show_mask=False):
     """
-    HDR102SDR conversion, using Hable tonemap as it base (Stolen from age@Doom9)
-    clip: Video Source
-    peak: Video Peak
-    desat: Desaturation (I recommend leaving it at 50)
-    brightness: Brightness for adjustment (set it to 0 for disable)
-    cont: idk what is this, it makes it better tho
-    lin: Linearize the tonemap
-    satmask: Show Saturation mask (useless)
-    clipped: idk (useless)
+    n4ofunc.adaptive_scaling
+    Descale within range and upscale it back to target_w and target_h
+    If target are not defined, it will be using original resolution
+
+    Written originally by kageru, modified by NoAiOne.
+
+    :vapoursynth.VideoNode clip:
+    :int target_w: Target upscaled width resolution
+    :int target_h: Target upscaled width resolution
+    :list descale_range: Descale range number in list
+    :str kernel: Descaling kernel
+    :float b: Bicubic Descale "b" num
+    :float c: Bicubic Descale "c" num
+    :int taps: Lanczos Descale "c" num
+    :int iter_max: Iterate mask with core.std.Maximum()
+    :bool show_mask: Show mask
     """
-    c = clip
-    c = core.resize.Bicubic(clip=c, format=vs.RGBS, filter_param_a=0.0, filter_param_b=1.0, range_in_s="limited", matrix_in_s="2020ncl", primaries_in_s="2020", primaries_s="2020", transfer_in_s="st2084", transfer_s="linear", dither_type="none", nominal_luminance=peak)
-    o = c
-    a = c
+    target_w = clip.width if target_w is None else target_w
+    target_h = clip.height if target_h is None else target_h
+    if not isinstance(descale_range, list):
+        raise TypeError('adaptive_scaling: descale_range: must be a list containing 2 number')
 
-    source_peak = peak
-    LDR_nits = 100
-    exposure_bias = source_peak / LDR_nits
+    if len(descale_range) < 2:
+        raise ValueError('adaptive_scaling: descale_range: need 2 different number to start')
 
-    if brightness > 100:
-        brightness = 100
+    if descale_range[0] > descale_range[1]:
+        raise ValueError('adaptive_scaling: descale_range: first value cannot be larger than second value')
 
-    if desat < 0:
-        desat = 0
-    if desat > 100:
-        desat = 100
-    desat = desat / 100
+    if descale_range[0] > target_h and rescale or descale_range[1] > target_h and rescale:
+        raise ValueError('adaptive_scaling: descale_range: One of the value cannot be larger than target_h')
 
-    tm = ((1 * (0.15 * 1 + 0.10 * 0.50) + 0.20 * 0.02) / (1 * (0.15 * 1 + 0.50) + 0.20 * 0.30)) - 0.02 / 0.30
-    w = ((exposure_bias * (0.15 * exposure_bias + 0.10 * 0.50) + 0.20 * 0.02) / (exposure_bias * (0.15 * exposure_bias + 0.50) + 0.20 * 0.30)) - 0.02 / 0.30
-    tm_ldr_value = tm * (1 / w)#value of 100 nits after the tone mapping
-    ldr_value_mult = tm_ldr_value / (1 / exposure_bias)#0.1 (100nits) * ldr_value_mult=tm_ldr_value
+    if kernel not in ['bicubic', 'bilinear', 'lanczos', 'spline16', 'spline36']:
+        raise ValueError('adaptive_scaling: kernel: Kernel type doesn\'t exist\nAvailable one: bicubic, bilinear, lanczos, spline16, spline36')
 
-    tm = core.std.Expr(c, expr="x {exposure_bias} * 0.15 x {exposure_bias} * * 0.05 + * 0.004 + x  {exposure_bias} * 0.15 x {exposure_bias} * * 0.50 + * 0.06 + / 0.02 0.30 / -".format(exposure_bias=exposure_bias), format=vs.RGBS)
-    w = ((exposure_bias * (0.15 * exposure_bias + 0.10 * 0.50) + 0.20 * 0.02) / (exposure_bias * (0.15 * exposure_bias + 0.50) + 0.20 * 0.30)) -0.02 / 0.30
-    tm = core.std.Expr(clips=[tm, c], expr="x  1 {w}  / * ".format(exposure_bias=exposure_bias, w=w), format=vs.RGBS)
-    tm = core.std.Limiter(tm, 0, 1)
+    if (target_w % 2) != 0:
+        raise ValueError('adaptive_scaling: target_w: Must be a mod2 number (even number)')
 
-    if lin == True:
-        #linearize the tonemapper curve under 100nits
-        tm = core.std.Expr(clips=[tm, o], expr="x {tm_ldr_value} < y {ldr_value_mult} * x ?".format(tm_ldr_value=tm_ldr_value, ldr_value_mult=ldr_value_mult))
+    if (target_h % 2) != 0:
+        raise ValueError('adaptive_scaling: target_h: Must be a mod2 number (even number)')
 
-    a = core.std.Expr(a, expr="x  {ldr_value_mult} *   ".format(ldr_value_mult=ldr_value_mult), format=vs.RGBS)
+    def VideoResizer(b, c, taps, kernel):
+        if kernel == 'bilinear':
+            return core.resize.Bilinear
+        elif kernel == 'bicubic':
+            return partial(core.resize.Bicubic, filter_param_a=b, filter_param_b=c)
+        elif kernel == 'lanczos':
+            return partial(core.resize.Lanczos, filter_param_a=taps)
+        elif kernel == 'spline16':
+            return core.resize.Spline16
+        elif kernel == 'spline36':
+            return core.resize.Spline36
 
-    r = core.std.ShufflePlanes(clips=[a], planes=[0], colorfamily=vs.GRAY)
-    g = core.std.ShufflePlanes(clips=[a], planes=[1], colorfamily=vs.GRAY)
-    b = core.std.ShufflePlanes(clips=[a], planes=[2], colorfamily=vs.GRAY)
-    #luminance
-    l = core.std.Expr(clips=[r, g, b], expr="x 0.2627 * y 0.678 * + z 0.0593 * +", format=vs.GRAY)
+    def VideoDescaler(b, c, taps, kernel):
+        if kernel.lower() == 'bilinear':
+            return core.descale.Debilinear
+        elif kernel.lower() == 'bicubic':
+            return partial(core.descale.Debicubic, b=b, c=c)
+        elif kernel.lower() == 'lanczos':
+            return partial(core.descale.Delanczos, taps=taps)
+        elif kernel.lower() == 'spline16':
+            return core.descale.Despline16
+        elif kernel.lower() == 'spline36':
+            return core.descale.Despline36
 
-    #value under 100nits after the tone mapping(tm_ldr_value) becomes 0, even tm_ldr_value becomes 0 and then scale all in the 0-1 range fo the mask
-    mask = core.std.Expr(clips=[l], expr="x {tm_ldr_value} - {ldr_value_mult} /".format(ldr_value_mult=ldr_value_mult, tm_ldr_value=tm_ldr_value))
-    mask = core.std.Limiter(mask, 0, 1)
+    def simple_descale(y: vs.VideoNode, h: int) -> tuple:
+        down = global_clip_descaler(y, get_w(h), h)
+        up = global_clip_resizer(down, target_w, target_h)
+        diff = core.std.Expr([y, up], 'x y - abs').std.PlaneStats()
+        return down, diff
 
-    #reduce the saturation blending with grayscale
-    lrgb = core.std.ShufflePlanes(clips=[l, l, l], planes=[0, 0, 0], colorfamily=vs.RGB)
-    asat = core.std.Expr(clips=[a, lrgb], expr="y {tm_ldr_value} < x  y {desat} * x 1 {desat} - * + ?".format(tm_ldr_value=tm_ldr_value, desat=desat))
-    a = core.std.MaskedMerge(a, asat, mask)
+    ref = clip
+    clip32 = fvf.Depth(clip, 32)
+    y = get_y(clip32)
+    global_clip_resizer = VideoResizer(b, c, taps, kernel)
+    global_clip_descaler = VideoDescaler(b, c, taps, kernel)
 
-    r = core.std.ShufflePlanes(clips=[a], planes=[0], colorfamily=vs.GRAY)
-    g = core.std.ShufflePlanes(clips=[a], planes=[1], colorfamily=vs.GRAY)
-    b = core.std.ShufflePlanes(clips=[a], planes=[2], colorfamily=vs.GRAY)
+    descale_listp = [simple_descale(y, h) for h in range(descale_range[0], descale_range[1])]
+    descale_list = [a[0] for a in descale_listp]
+    descale_props = [a[1] for a in descale_listp]
 
-    rl = core.std.ShufflePlanes(clips=[tm], planes=[0], colorfamily=vs.GRAY)
-    gl = core.std.ShufflePlanes(clips=[tm], planes=[1], colorfamily=vs.GRAY)
-    bl = core.std.ShufflePlanes(clips=[tm], planes=[2], colorfamily=vs.GRAY)
-    l2 = core.std.Expr(clips=[rl, gl, bl], expr="x 0.2627 * y 0.678 * + z 0.0593 * +", format=vs.GRAY)
-    nl = l2
-    scale = core.std.Expr(clips=[nl, l], expr="x y /")
-    r1 = core.std.Expr(clips=[r, scale], expr="x y *")
-    g1 = core.std.Expr(clips=[g, scale], expr="x y *")
-    b1 = core.std.Expr(clips=[b, scale], expr="x y *")
+    def select(n, descale_list, f):
+        errors = [x.props.PlaneStatsAverage for x in f]
+        y_deb = descale_list[errors.index(min(errors))]
+        dmask = core.std.Expr([y, global_clip_resizer(y_deb, target_w, target_h)], 'x y - abs 0.025 > 1 0 ?').std.Maximum()
+        y_deb16 = fvf.Depth(y_deb, 16)
 
-    c = core.std.ShufflePlanes(clips=[r1, g1, b1], planes=[0, 0, 0], colorfamily=vs.RGB)
-    c = core.std.Limiter(c, 0, 1)
+        y_scaled = edi.nnedi3_rpow2(y_deb16, nns=4, correct_shift=True, width=target_w, height=target_h).fmtc.bitdepth(bits=32)
+        if show_native_res and not show_mask:
+            y_scaled = core.text.Text(y_scaled, 'Native resolution for this frame: {}'.format(y_deb.height))
+        return core.std.ClipToProp(y_scaled, dmask)
 
-    if show_satmask == True:
-        #show mask
-        c = core.std.ShufflePlanes(clips=[mask, mask, mask], planes=[0, 0, 0], colorfamily=vs.RGB)
+    y_deb = core.std.FrameEval(y, partial(select, descale_list=descale_list), prop_src=descale_props)
+    dmask = core.std.PropToClip(y_deb)
 
-    if show_clipped == True:
-        #show clipped
-        c = a
-    #then
-    c = core.resize.Bicubic(clip=c, format=vs.YUV420P10, filter_param_a=0.0, filter_param_b=1.0, matrix_s="709", primaries_in_s="2020", primaries_s="709", transfer_in_s="linear", transfer_s="709", dither_type="ordered")
+    def square():
+        top = core.std.BlankClip(length=len(y), format=vs.GRAYS, height=4, width=10, color=[1])
+        side = core.std.BlankClip(length=len(y), format=vs.GRAYS, height=2, width=4, color=[1])
+        center = core.std.BlankClip(length=len(y), format=vs.GRAYS, height=2, width=2, color=[0])
+        t1 = core.std.StackHorizontal([side, center, side])
+        return core.std.StackVertical([top, t1, top])
 
-    #some adjustment
-    if brightness > 0:
-        if cont < 0:
-            cont = 1.05
-        elif cont > 100:
-            cont = 100
-		if brightness > 100:
-			brightness = 100
-        c = adjust.Tweak(c, bright=brightness, cont=cont)
-    return c
+    line = core.std.StackHorizontal([square()] * (target_w // 10))
+    full = core.std.StackVertical([line] * (target_h // 10))
+
+    artifacts = core.misc.Hysteresis(global_clip_resizer(dmask, target_w, target_h, _format=vs.GRAYS), core.std.Expr([get_y(clip32).tcanny.TCanny(sigma=3), full], 'x y min'))
+
+    ret_raw = kgf.retinex_edgemask(ref)
+    ret = ret_raw.std.Binarize(30).rgvs.RemoveGrain(3)
+    mask = core.std.Expr([iterate(artifacts, core.std.Maximum, iter_max), ret.resize.Point(_format=vs.GRAYS)], 'y x -').std.Binarize(0.4)
+    mask = mask.std.Inflate().std.Convolution(matrix=[1] * 9).std.Convolution(matrix=[1] * 9)
+
+    if show_mask:
+        return mask
+
+    merged = core.std.MaskedMerge(y, y_deb, mask)
+    merged = core.std.ShufflePlanes([merged, clip32], [0, 1, 2], vs.YUV)
+    return fvf.Depth(merged, 16)
+
+
+src = source
+descale = masked_descale
+antiedge = antiedgemask
+adaptive_degrain = adaptive_smdegrain
+adaptive_rescale = partial(adaptive_scaling, rescale=True)
+#adaptive_descale = partial(adaptive_scaling, rescale=False) # will be written later
+
 
 ######### Below here is mpeg2stinx script #########
+
+# Note: Not working currently, help me
 
 def spline64bob(src, process_chroma=True):
     def bob(src):
@@ -350,12 +561,15 @@ def spline64bob(src, process_chroma=True):
         return core.std.ShufflePlanes([y, bob(u), bob(v)], planes=[0, 0, 0], colorfamily=vs.YUV)
     return core.std.ShufflePlanes([y, core.std.SelectEvery(u, cycle=1, offsets=[0, 0]), core.std.SelectEvery(v, cycle=1, offsets=[0, 0])], planes=[0, 0, 0], colorfamily=vs.YUV)
 
+
 def pointbob(src):
     src = src.std.SeparateFields(True)[::2]
     return core.resize.Point(src, src.width, 2*src.height)
 
+
 def median3(a, b, c, grey=True):
     return core.std.Interleave([a, b, c]).rgvs.Clense(planes=[0, 1, 2] if grey is True else 0).std.SelectEvery(cycle=3, offsets=1)
+
 
 def crossfieldrepair(clip, sw=2, sh=2, bobbed_clip=None, chroma=True):
     if (sw < 0 and sh < 0) or sw < 0 or sh < 0:
@@ -372,17 +586,18 @@ def crossfieldrepair(clip, sw=2, sh=2, bobbed_clip=None, chroma=True):
         re = core.rgvs.Repair(bobbed_clip, e, mode=[1])
         ro = core.rgvs.Repair(bobbed_clip, o, mode=[1])
     else:
-        eX = core.std.SelectEvery(bob_ex, cycle=2, offsets=0)
-        oX = core.std.SelectEvery(bob_ex, cycle=2, offsets=1)
-        eI = core.std.SelectEvery(bob_in, cycle=2, offsets=0)
-        oI = core.std.SelectEvery(bob_in, cycle=2, offsets=1)
-        re = median3(bobbed_clip, eX, oX, False)
-        ro = median3(bobbed_clip, eI, oI, False)
+        ex = core.std.SelectEvery(bob_ex, cycle=2, offsets=0)
+        ox = core.std.SelectEvery(bob_ex, cycle=2, offsets=1)
+        ei = core.std.SelectEvery(bob_in, cycle=2, offsets=0)
+        oi = core.std.SelectEvery(bob_in, cycle=2, offsets=1)
+        re = median3(bobbed_clip, ex, ox, False)
+        ro = median3(bobbed_clip, ei, oi, False)
     res = core.std.Interleave(clips=[re, ro])
     res = res.std.SeparateFields(True)[::2]
     res = core.std.SelectEvery(res, cycle=4, offsets=[2, 1])
     res = res.std.DoubleWeave()[::2]
     return res
+
 
 def maxyuv(c):
     y = c.resize.Bicubic(width=c.width, height=c.height, format=vs.YUV420P8)
@@ -395,6 +610,7 @@ def maxyuv(c):
     ls = core.std.Expr([y, core.resize.Bilinear(u, w, h)], expr=['x y max']).std.Expr([y, core.resize.Bilinear(v, w, h)], expr=['x y max'])
     cs = core.std.Expr([yc, u], expr=['x y max']).std.Expr([yc, v], expr=['x y max'])
     return core.std.ShufflePlanes([cs, cs, ls], planes=[0, 0, 0], colorfamily=vs.YUV)
+
 
 def mpeg2stinx(src, mode=1, sw=1, sh=1, contra=True, blurv=0.0, sstr=2.0, scl=0.25, dither=False, order=0, diffscl=None):
     """
@@ -506,3 +722,4 @@ def mpeg2stinx(src, mode=1, sw=1, sh=1, contra=True, blurv=0.0, sstr=2.0, scl=0.
     if contra:
         return last
     return nuked
+
