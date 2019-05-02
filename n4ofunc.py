@@ -379,27 +379,27 @@ def source(src, lsmas=False, depth=False, trims=None, dither_yuv=True) -> vs.Vid
         return a, b
 
 
+    def Source(src, lsmas=False):
+        if is_extension(src, '.m2ts') or is_extension(src, '.ts'): # Force lsmas
+            lsmas = True
+        if is_extension(src, '.d2v'):
+            return core.d2v.Source
+        if is_extension(src, '.avi'):
+            return core.avisource.AVISource
+        if is_image(src):
+            return core.imwri.Read
+        if lsmas:
+            return core.lsmas.LWLibavSource
+        return core.ffms2.Source
+
+
     if not isinstance(lsmas, bool):
         return ValueError('lsmas: boolean only (True or False)')
     if not isinstance(src, str):
         return ValueError('src: must be string input')
 
-    if not isinstance(src, vs.VideoNode) and is_extension(src, '.d2v'):
-        src = core.d2v.Source(src)
-
-    if not isinstance(src, vs.VideoNode) and is_extension(src, '.avi'):
-        src = core.avisource.AVISource(src)
-
-    if not isinstance(src, vs.VideoNode) and is_image(src):
-        src = core.imwri.Read(src)
-
-    if  not isinstance(src, vs.VideoNode) and is_extension(src, '.m2ts') or not isinstance(src, vs.VideoNode) and is_extension(src, '.ts'): # force lsmas
-        lsmas = True
-
-    if  not isinstance(src, vs.VideoNode) and lsmas:
-        src = core.lsmas.LWLibavSource(src)
-    elif not isinstance(src, vs.VideoNode) and not lsmas:
-        src = core.ffms2.Source(src)
+    OpenSource = Source(src, lsmas)
+    src = OpenSource(src)
 
     if dither_yuv and src.format.color_family != vs.YUV:
         src = core.resize.Point(src, format=vs.YUV420P8, matrix_s='709')
