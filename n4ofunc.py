@@ -9,7 +9,7 @@ import vapoursynth as vs
 
 from MaskDetail import maskDetail
 from vapoursynth import core
-from vsutil import get_y, is_image, iterate, split, get_w
+from vsutil import get_y, is_image, iterate, split, get_w, frame2clip
 from math import ceil, log
 
 #helper
@@ -533,9 +533,42 @@ def adaptive_scaling(clip: vs.VideoNode, target_w=None, target_h=None, descale_r
     return fvf.Depth(merged, 16)
 
 
+def SimpleFrameReplace(src: vs.VideoNode, src_frame: int, target_frame: str) -> vs.VideoNode:
+    """
+    A simple frame replacing, useful for replacing black frame with other frame from the same video
+    :param src: Video Source
+    :param src_frame: Video Frame number as Source for replacing
+    :param target_frame: Video Target frame to be replaced from src_frame
+
+    :target_frame: can be used as range, write it: `x-y`
+    """
+    src_fpsnum = src.fps.numerator
+    src_fpsden = src.fps.denominator
+
+    src_frame = frame2clip(src.get_frame(src_frame)).std.AssumeFPS(fpsnum=src_fpsnum, fpsden=src_fpsden)
+
+    frame_range = target_frame.split('-')
+
+    if len(frame_range) < 2:
+        frame_range = [int(frame_range[0]), int(frame_range[0]) + 1]
+    else:
+        frame_range = [int(frame_range[0]), int(frame_range[1]) + 1]
+
+    if frame_range[0] > frame_range[1]:
+        raise ValueError('SimpleFrameReplace: `target_frame` last range number are bigger than the first one')
+
+    src_frame = src_frame * (frame_range[1] - frame_range[0])
+
+    pre = src[:frame_range[0]]
+    post = src[frame_range[1]:]
+
+    return pre + src_frame + post
+
+
 src = source
 descale = masked_descale
 antiedge = antiedgemask
+sfr = SimpleFrameReplace
 adaptive_degrain = adaptive_smdegrain
 adaptive_rescale = partial(adaptive_scaling, rescale=True)
 #adaptive_descale = partial(adaptive_scaling, rescale=False) # will be written later
