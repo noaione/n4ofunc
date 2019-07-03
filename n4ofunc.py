@@ -565,12 +565,156 @@ def SimpleFrameReplace(src: vs.VideoNode, src_frame: int, target_frame: str) -> 
     return pre + src_frame + post
 
 
+def better_planes(clips, props="avg", show_info=False):
+    """
+    A naive function for picking the best planes from every frame from a list of video
+
+    Every clips source planes are split into Y, U, and V
+    Then using defined `props` they will be compared:
+        - Avg: Highest Average PlaneStats
+        - Min: Lowest Minimum PlaneStats
+        - Max: Highest Maximum PlaneStats
+    The best outcome plane will be returned
+
+    `props` value must be:
+    - For using PlaneStatsAverage as comparasion: "avg", "average", "both, or "planestatsaverage"
+    - For using PlaneStatsMin as comparasion: "min", "minimum", or "planestatsmin"
+    - For using PlaneStatsMax as comparasion: "max", "maximum", or "planestatsmax"
+
+    `show_info` are just showing what input will be used
+    if it's True (bool) it will show it.
+    You can customize it by passing a list of string to `show_info`
+
+    :param clips: A list of vapoursynth.VideoNode
+    :param props: A list or string for comparing, if it's a list, the maximum is 3 (For Y, U, and V)
+    :param show_info: Show text for what source are used
+
+    Example:
+    src = nao.better_planes(clips=[src_vbr, src_hevc, src_cbr], props=["max", "avg"], show_info=["AMZN VBR", "AMZN HEVC", "AMZN CBR"])
+    src = nao.better_planes(clips=[src1, src2, src3], show_info=["CR", "Funi", "Abema"])
+    src = nao.better_planes(clips=[src1, src2], props="max")
+    """
+
+    if len(clips) < 2:
+        raise ValueError('better_planes: `clips` must contain two or more clips')
+
+    avg_ = ["avg", "average", "both", "planestatsaverage"]
+    min_ = ["min", "minimum", "planestatsmin"]
+    max_ = ["max", "maximum", "planestatsmax"]
+
+    if isinstance(props, str):
+        props = props.lower()
+        if props in avg_:
+            props_ = ["PlaneStatsAverage" for i in range(3)]
+        elif props in min_:
+            props_ = ["PlaneStatsMin" for i in range(3)]
+        elif props in max_:
+            props_ = ["PlaneStatsMax" for i in range(3)]
+        else:
+            raise ValueError("better_planes: `props` must be a `min` or `max` or `avg`")
+    elif isinstance(props, list):
+        up_t = len(props)
+        props_ = []
+        if up_t == 1:
+            t_props_ = [props[0] for i in range(3)]
+            for n, i in enumerate(t_props_):
+                if i in avg_:
+                    props_.append("PlaneStatsAverage")
+                elif i in min_:
+                    props_.append("PlaneStatsMin")
+                elif i in max_:
+                    props_.append("PlaneStatsMax")
+                else:
+                    raise ValueError("better_planes: `props[{}]` must be a `min` or `max` or `avg`".format(n))
+        elif up_t == 2:
+            t_props_ = [props[0], props[1], props[1]]
+            for n, i in enumerate(t_props_):
+                if i in avg_:
+                    props_.append("PlaneStatsAverage")
+                elif i in min_:
+                    props_.append("PlaneStatsMin")
+                elif i in max_:
+                    props_.append("PlaneStatsMax")
+                else:
+                    raise ValueError("better_planes: `props[{}]` must be a `min` or `max` or `avg`".format(n))
+        elif up_t == 3:
+            t_props_ = props
+            for n, i in enumerate(t_props_):
+                if i in avg_:
+                    props_.append("PlaneStatsAverage")
+                elif i in min_:
+                    props_.append("PlaneStatsMin")
+                elif i in max_:
+                    props_.append("PlaneStatsMax")
+                else:
+                    raise ValueError("better_planes: `props[{}]` must be a `min` or `max` or `avg`".format(n))
+        elif up_t > 3:
+            t_props_ = props[:3]
+            for n, i in enumerate(t_props_):
+                if i in avg_:
+                    props_.append("PlaneStatsAverage")
+                elif i in min_:
+                    props_.append("PlaneStatsMin")
+                elif i in max_:
+                    props_.append("PlaneStatsMax")
+                else:
+                    raise ValueError("better_planes: `props[{}]` must be a `min` or `max` or `avg`".format(n))
+    else:
+        raise ValueError("better_planes: props must be a string or a list")
+
+    clips1_ = []
+    clips2_ = []
+    clips3_ = []
+    if isinstance(show_info, list):
+        for n, clip in enumerate(clips):
+            clips1_.append(core.text.Text(core.std.ShufflePlanes(clip, 0, vs.GRAY), "{} - Y plane ({})".format(show_info[n], props_[0]), 7))
+            clips2_.append(core.text.Text(core.std.ShufflePlanes(clip, 1, vs.GRAY), "{} - U plane ({})".format(show_info[n], props_[1]), 8))
+            clips3_.append(core.text.Text(core.std.ShufflePlanes(clip, 2, vs.GRAY), "{} - V plane ({})".format(show_info[n], props_[2]), 9))
+    elif isinstance(show_info, bool) and show_info:
+        for n, clip in enumerate(clips):
+            clips1_.append(core.text.Text(core.std.ShufflePlanes(clip, 0, vs.GRAY), "Input {} - Y plane ({})".format(n+1, props_[0]), 7))
+            clips2_.append(core.text.Text(core.std.ShufflePlanes(clip, 1, vs.GRAY), "Input {} - U plane ({})".format(n+1, props_[1]), 8))
+            clips3_.append(core.text.Text(core.std.ShufflePlanes(clip, 2, vs.GRAY), "Input {} - V plane ({})".format(n+1, props_[2]), 9))
+    else:
+        for clip in clips:
+            clips1_.append(core.std.ShufflePlanes(clip, 0, vs.GRAY))
+            clips2_.append(core.std.ShufflePlanes(clip, 1, vs.GRAY))
+            clips3_.append(core.std.ShufflePlanes(clip, 2, vs.GRAY))
+
+    def choose_plane(n, f, clist, pd):
+        clip_data = []
+        for p in f:
+            clip_data.append(p.props[pd])
+        if pd == "PlaneStatsMin":
+            best_clip = min(clip_data)
+        else:
+            best_clip = max(clip_data)
+        return clist[clip_data.index(best_clip)]
+
+    _clips_prop1 = []
+    _clips_prop2 = []
+    _clips_prop3 = []
+    for clip in clips1_:
+        _clips_prop1.append(clip.std.PlaneStats(plane=0))
+    for clip in clips2_:
+        _clips_prop2.append(clip.std.PlaneStats(plane=0))
+    for clip in clips3_:
+        _clips_prop3.append(clip.std.PlaneStats(plane=0))
+
+    y_val = core.std.FrameEval(clips1_[0], partial(choose_plane, clist=clips1_, pd=props_[0]), prop_src=_clips_prop1)
+    u_val = core.std.FrameEval(clips2_[0], partial(choose_plane, clist=clips2_, pd=props_[1]), prop_src=_clips_prop2)
+    v_val = core.std.FrameEval(clips3_[0], partial(choose_plane, clist=clips3_, pd=props_[2]), prop_src=_clips_prop3)
+
+    return core.std.ShufflePlanes([y_val, u_val, v_val], [0], vs.YUV)
+
+
 src = source
 descale = masked_descale
 antiedge = antiedgemask
 sfr = SimpleFrameReplace
 adaptive_degrain = adaptive_smdegrain
 adaptive_rescale = partial(adaptive_scaling, rescale=True)
+bplanes = better_planes
 #adaptive_descale = partial(adaptive_scaling, rescale=False) # will be written later
 
 
