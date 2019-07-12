@@ -354,26 +354,15 @@ def source(src, lsmas=False, depth=False, trims=None, dither_yuv=True) -> vs.Vid
     def parse_trim_data(trim_data, video):
         a, b = trim_data
 
-        if a == 'black24':
-            a = 24
-        if b == 'black24':
-            b = video.num_frames - 25
-
-        if a == 'black12':
-            a = 12
-        if b == 'black12':
-            b = video.num_frames - 13
-
         # Every retarded streaming sites ever
         if a == 'funi':
             a = 240
         if b == 'sentai':
             b = video.num_frames - 1458 # May be changed idk
 
-        if b == 'last':
-            b = video.num_frames - 1
-
-        if b < 0:
+        if b == 0:
+            b = video.num_frames
+        elif b < 0:
             b = video.num_frames - (abs(b) + 1)
 
         return a, b
@@ -574,12 +563,14 @@ def better_planes(clips, props="avg", show_info=False):
         - Avg: Highest Average PlaneStats
         - Min: Lowest Minimum PlaneStats
         - Max: Highest Maximum PlaneStats
+        - Both: Value from subtracting PlaneStatsMax with PlaneStatsMin
     The best outcome plane will be returned
 
     `props` value must be:
-    - For using PlaneStatsAverage as comparasion: "avg", "average", "both, or "planestatsaverage"
+    - For using PlaneStatsAverage as comparasion: "avg", "average", or "planestatsaverage"
     - For using PlaneStatsMin as comparasion: "min", "minimum", or "planestatsmin"
     - For using PlaneStatsMax as comparasion: "max", "maximum", or "planestatsmax"
+    - For subtracting PlaneStatsMax with PlaneStatsMin as comparasion: "both"
 
     `show_info` are just showing what input will be used
     if it's True (bool) it will show it.
@@ -589,18 +580,16 @@ def better_planes(clips, props="avg", show_info=False):
     :param props: A list or string for comparing, if it's a list, the maximum is 3 (For Y, U, and V)
     :param show_info: Show text for what source are used
 
-    Example:
+    Example: 
     src = nao.better_planes(clips=[src_vbr, src_hevc, src_cbr], props=["max", "avg"], show_info=["AMZN VBR", "AMZN HEVC", "AMZN CBR"])
     src = nao.better_planes(clips=[src1, src2, src3], show_info=["CR", "Funi", "Abema"])
     src = nao.better_planes(clips=[src1, src2], props="max")
     """
 
-    if len(clips) < 2:
-        raise ValueError('better_planes: `clips` must contain two or more clips')
-
-    avg_ = ["avg", "average", "both", "planestatsaverage"]
+    avg_ = ["avg", "average", "planestatsaverage"]
     min_ = ["min", "minimum", "planestatsmin"]
     max_ = ["max", "maximum", "planestatsmax"]
+    other_ = ["both"]
 
     if isinstance(props, str):
         props = props.lower()
@@ -610,6 +599,8 @@ def better_planes(clips, props="avg", show_info=False):
             props_ = ["PlaneStatsMin" for i in range(3)]
         elif props in max_:
             props_ = ["PlaneStatsMax" for i in range(3)]
+        elif props in other_:
+            props_ = ["Both" for i in range(3)]
         else:
             raise ValueError("better_planes: `props` must be a `min` or `max` or `avg`")
     elif isinstance(props, list):
@@ -624,6 +615,8 @@ def better_planes(clips, props="avg", show_info=False):
                     props_.append("PlaneStatsMin")
                 elif i in max_:
                     props_.append("PlaneStatsMax")
+                elif i in other_:
+                    props_.append("Both")
                 else:
                     raise ValueError("better_planes: `props[{}]` must be a `min` or `max` or `avg`".format(n))
         elif up_t == 2:
@@ -635,6 +628,8 @@ def better_planes(clips, props="avg", show_info=False):
                     props_.append("PlaneStatsMin")
                 elif i in max_:
                     props_.append("PlaneStatsMax")
+                elif i in other_:
+                    props_.append("Both")
                 else:
                     raise ValueError("better_planes: `props[{}]` must be a `min` or `max` or `avg`".format(n))
         elif up_t == 3:
@@ -646,6 +641,8 @@ def better_planes(clips, props="avg", show_info=False):
                     props_.append("PlaneStatsMin")
                 elif i in max_:
                     props_.append("PlaneStatsMax")
+                elif i in other_:
+                    props_.append("Both")
                 else:
                     raise ValueError("better_planes: `props[{}]` must be a `min` or `max` or `avg`".format(n))
         elif up_t > 3:
@@ -657,6 +654,8 @@ def better_planes(clips, props="avg", show_info=False):
                     props_.append("PlaneStatsMin")
                 elif i in max_:
                     props_.append("PlaneStatsMax")
+                elif i in other_:
+                    props_.append("Both")
                 else:
                     raise ValueError("better_planes: `props[{}]` must be a `min` or `max` or `avg`".format(n))
     else:
@@ -667,14 +666,14 @@ def better_planes(clips, props="avg", show_info=False):
     clips3_ = []
     if isinstance(show_info, list):
         for n, clip in enumerate(clips):
-            clips1_.append(core.text.Text(core.std.ShufflePlanes(clip, 0, vs.GRAY), "{} - Y plane ({})".format(show_info[n], props_[0]), 7))
-            clips2_.append(core.text.Text(core.std.ShufflePlanes(clip, 1, vs.GRAY), "{} - U plane ({})".format(show_info[n], props_[1]), 8))
-            clips3_.append(core.text.Text(core.std.ShufflePlanes(clip, 2, vs.GRAY), "{} - V plane ({})".format(show_info[n], props_[2]), 9))
+            clips1_.append(core.text.Text(core.std.ShufflePlanes(clip, 0, vs.GRAY), "{} - Y ({})".format(show_info[n], props_[0]), 7))
+            clips2_.append(core.text.Text(core.std.ShufflePlanes(clip, 1, vs.GRAY), "{} - U ({})".format(show_info[n], props_[1]), 8))
+            clips3_.append(core.text.Text(core.std.ShufflePlanes(clip, 2, vs.GRAY), "{} - V ({})".format(show_info[n], props_[2]), 9))
     elif isinstance(show_info, bool) and show_info:
         for n, clip in enumerate(clips):
-            clips1_.append(core.text.Text(core.std.ShufflePlanes(clip, 0, vs.GRAY), "Input {} - Y plane ({})".format(n+1, props_[0]), 7))
-            clips2_.append(core.text.Text(core.std.ShufflePlanes(clip, 1, vs.GRAY), "Input {} - U plane ({})".format(n+1, props_[1]), 8))
-            clips3_.append(core.text.Text(core.std.ShufflePlanes(clip, 2, vs.GRAY), "Input {} - V plane ({})".format(n+1, props_[2]), 9))
+            clips1_.append(core.text.Text(core.std.ShufflePlanes(clip, 0, vs.GRAY), "Input {} - Y ({})".format(n+1, props_[0]), 7))
+            clips2_.append(core.text.Text(core.std.ShufflePlanes(clip, 1, vs.GRAY), "Input {} - U ({})".format(n+1, props_[1]), 8))
+            clips3_.append(core.text.Text(core.std.ShufflePlanes(clip, 2, vs.GRAY), "Input {} - V ({})".format(n+1, props_[2]), 9))
     else:
         for clip in clips:
             clips1_.append(core.std.ShufflePlanes(clip, 0, vs.GRAY))
@@ -683,8 +682,12 @@ def better_planes(clips, props="avg", show_info=False):
 
     def choose_plane(n, f, clist, pd):
         clip_data = []
-        for p in f:
-            clip_data.append(p.props[pd])
+        if pd == "Both":
+            for p in f:
+                clip_data.append(p.props['PlaneStatsMax']-p.props['PlaneStatsMin'])
+        else:
+            for p in f:
+                clip_data.append(p.props[pd])
         if pd == "PlaneStatsMin":
             best_clip = min(clip_data)
         else:
