@@ -7,16 +7,21 @@ import kagefunc as kgf
 import mvsfunc as mvf
 import vapoursynth as vs
 
-from MaskDetail import maskDetail
-from vapoursynth import core
 from vsutil import get_y, is_image, iterate, split, get_w, frame2clip
 from math import ceil, log
 
+core = vs.core
+
 #helper
-def is_extension(x, y):
+def is_extension(x: str, y: str) -> bool:
     """
     Return a boolean if extension are the same or not
     `x` are lowered/downcased
+
+    :param x: str: A full filename with extension
+    :param y: str: extension format in str (without dot)
+
+    :return: bool
     """
     return x.lower()[x.lower().rfind('.'):] == y
 
@@ -24,6 +29,11 @@ def is_extension(x, y):
 def register_f(c: vs.VideoNode, yuv444=False) -> vs.VideoNode.format:
     """
     Return a registered new format
+
+    :param c: vapoursynth.VideoNode: VideoNode object
+    :param yuv444: bool: Do you want to register it as 4:4:4 subsampling or not
+
+    :return: vapoursynth.VideoNode.format
     """
     return core.register_format(
         c.format.color_family,
@@ -128,19 +138,18 @@ def nDeHalo(clp=None, rx=None, ry=None, darkstr=None, brightstr=None, lowsens=No
     return core.std.MaskedMerge(fc, final, mask)
 
 
-def save_difference(src1, src2, threshold=0.1):
+def save_difference(src1: vs.VideoNode, src2: vs.VideoNode, threshold: float = 0.1, output_fn: list = ['src1', 'src2']):
     """
     n4ofunc.save_difference
 
     Save a difference between src1 and src2
     Useful for comparing between TV and BD
 
-    :src1 vapoursynth.VideoNode: Video Source 1 as the "old" video
-    :src2 vapoursynth.VideoNode: Video Source 2 as the "new" video
-    :threshold float: Luma threshold between src1 and src2
+    :param src1: vapoursynth.VideoNode: Video Source 1 as the "old" video
+    :param src2: vapoursynth.VideoNode: Video Source 2 as the "new" video
+    :param threshold: float: Luma threshold between src1 and src2
+    :param output_fn: list: Output name for source (default are `src1` and `src2`)
     """
-    import cv2
-    import numpy as np
     import os
     import shutil
 
@@ -150,52 +159,58 @@ def save_difference(src1, src2, threshold=0.1):
     src2_bits = src2.format.bits_per_sample
 
     if src1.num_frames != src2.num_frames:
-        raise ValueError('src1 and src2 frame are not the same')
-
-    def save_as_image(vid, frame, output_format):
-        vid = vid.get_frame(frame)
-        planes = vid.format.num_planes
-        v = cv2.merge([np.array(vid.get_read_array(i), copy=False) for i in reversed(range(planes))])
-        v = cv2.resize(v, (1280, 720))
-        cv2.imwrite(output_format.format(frame), v)
+        raise ValueError('save_difference: src1 and src2 total frames are not the same')
+    if len(output_fn) < 2:
+        raise ValueError('save_difference: `output_fn` need a minimum of 2 name')
+    out_fn1, out_fn2 = output_fn[:2]
 
     cwd = os.getcwd()
     dirsave = cwd + '\\frame_difference'
-    print('@@ save_difference: starting process')
+    print('[@] save_difference: Starting process')
 
     if not os.path.isdir(dirsave):
         os.mkdir(dirsave)
 
     if src1_cf != vs.RGB:
-        src1 = mvf.ToRGB(src1)
+        src1 = src1.resize.Point(format=vs.RGBS, matrix_in_s='709')
     if src2_cf != vs.RGB:
-        src2 = mvf.ToRGB(src2)
-
-    print('Converted to RGB')
+        src2 = src2.resize.Point(format=vs.RGBS, matrix_in_s='709')
 
     if src1_bits != 8:
-        src1 = fvf.Depth(src1, 8)
+        src1 = src1.fmtc.bitdepth(bits=8)
     if src2_bits != 8:
-        src2 = fvf.Depth(src2, 8)
+        src2 = src2.fmtc.bitdepth(bits=8)
 
     src1_gray = src1.std.ShufflePlanes(0, vs.GRAY)
     src2_gray = src2.std.ShufflePlanes(0, vs.GRAY)
-    print('grayed')
 
     n = 0
-    for i, f in enumerate(core.std.PlaneStats(src1_gray, src2_gray).frames()):
-        print('@@ save_difference: Processing Frame {}/{} ({})'.format(i, src1_gray.num_frames, f.props["PlaneStatsDiff"]), end='\r')
-        if f.props["PlaneStatsDiff"] >= threshold:
-            print('@@ save_difference: Diff frame: {}'.format(i), end='\r\n')
-            save_as_image(src1, i, dirsave + '\\{}_src1.png')
-            save_as_image(src2, i, dirsave + '\\{}_src2.png')
-            n += 1
-
+    dataset = dict()
+    try:
+        for i, f in enumerate(core.std.PlaneStats(src1_gray, src2_gray).frames()):
+            print('[@] save_difference: Processing Frame {}/{} ({})'.format(i, src1_gray.num_frames, f.props["PlaneStatsDiff"]), end='\r')
+            if f.props["PlaneStatsDiff"] >= threshold:
+                dataset['{n}_{fn}'.format(n=i, fn=out_fn1)] = [src1[i], i, f.props['PlaneStatsDiff']]
+                dataset['{n}_{fn}'.format(n=i, fn=out_fn2)] = [src2[i], i, f.props['PlaneStatsDiff']]
+                n += 1
+        print('', end='\n')
+    except KeyboardInterrupt:
+        print('', end='\n')
+        print('[!!] CTRL+C Pressed, halting frame processing...')
     if n == 0:
-        print('@@ save_difference: no significant difference found from current threshold')
-        shutil.rmtree(dirsave)
+        print('[@] save_difference: no significant difference found from current threshold')
+        return shutil.rmtree(dirsave)
 
-    return
+    print('[@] save_difference: Saving image...')
+    print('[#] Total found: {}'.format(n))
+    try:
+        for namae, clips in dataset.items():
+            clip, frame, diff_amount = clips
+            print('[@] Saving Frame: {} ({})'.format(namae, diff_amount))
+            out = core.imwri.Write(clip, 'PNG', f"{dirsave}\\{namae} (%05d).png", firstnum=frame)
+            out.get_frame(0)
+    except KeyboardInterrupt:
+        print('[!!] CTRL+C Pressed, stopping...')
 
 
 def adaptive_smdegrain(src, thSAD=None, thSADC=None, luma_scaling=None, area='light', iter_edge=0, show_mask=False):
@@ -251,7 +266,37 @@ def antiedgemask(src, iteration=1):
     return core.std.Expr([whiteclip, edgemask], 'x y -')
 
 
-def masked_descale(src, target_w=None, target_h=None, kernel='bicubic', b=1/3, c=1/3, taps=3, yuv444=False, expandN=2, inflateN=1, iter_max=1, masked=True, show_mask=False) -> vs.VideoNode:
+def simple_native_mask(clip, descale_w, descale_h, blurh=1.5, blurv=1.5, iter_max=3):
+    clip32 = fvf.Depth(clip, 32)
+    y_32 = get_y(clip32)
+    clip_bits = clip.format.bits_per_sample
+
+    target_w = clip.width
+    target_h = clip.height
+
+    down = core.descale.Debicubic(y_32, descale_w, descale_h)
+    up = core.resize.Bicubic(down, target_w, target_h)
+    dmask = core.std.Expr([y_32, up], 'x y - abs 0.025 > 1 0 ?')
+    dmask = iterate(dmask, core.std.Maximum, iter_max).std.BoxBlur(hradius=blurh, vradius=blurv)
+    return core.resize.Bicubic(dmask, descale_w, descale_h).fmtc.bitdepth(bits=clip_bits)
+
+
+def masked_descale(src: vs.VideoNode, target_w=None, target_h=None, kernel='bicubic', b=1/3, c=1/3, taps=3, yuv444=False, expandN=1, masked=True, show_mask=False) -> vs.VideoNode:
+    """
+    A masked descale that will descale everything but "native" 1080p content or some kind of it
+
+    :param src: vapoursynth.VideoNode: A VideoNode object
+    :param target_w: int: Target descale width resolution
+    :param target_h: int: Target descale height resolution
+    :param kernel: str: Kernel that will be used for descaling and downscaling "native" content
+    :param b: float: parameter for bicubic kernel
+    :param c: float: parameter for bicubic kernel
+    :param taps: int: parameter for lanczos kernel
+    :param yuv444: bool: Dither to 4:4:4 chroma subsampling
+    :param expandN: int: Iteration for mask, using core.std.Maximum
+    :param masked: bool: Use mask for descaling, to make sure "native" content are not descaled but downscaled
+    :param show_mask: bool: Show mask that are used.
+    """
     if not src:
         raise ValueError('src cannot be empty')
     if not target_w:
@@ -259,10 +304,10 @@ def masked_descale(src, target_w=None, target_h=None, kernel='bicubic', b=1/3, c
     if not target_h:
         raise ValueError('target_h cannot be empty')
 
-    iter_max -= 1
+    expandN -= 1
 
-    if iter_max < 0:
-        raise ValueError('iter_max cannot be negative integer')
+    if expandN < 0:
+        raise ValueError('expandN cannot be negative integer')
 
     kernel = kernel.lower()
 
@@ -331,13 +376,11 @@ def masked_descale(src, target_w=None, target_h=None, kernel='bicubic', b=1/3, c
     VidResize = VideoResizer(b, c, taps, kernel)
     nr_resize = VidResize(src, target_w, target_h, format=descale_format.id)
 
-    video_mask = maskDetail(src, target_w, target_h, expandN=expandN, inflateN=inflateN, kernel=kernel)
-    video_mask = iterate(video_mask, core.std.Maximum, iter_max)
-
-    if show_mask:
-        return video_mask
-
     if masked:
+        video_mask = simple_native_mask(src, target_w, target_h, expandN)
+
+        if show_mask:
+            return video_mask
         return core.std.MaskedMerge(descale, nr_resize, video_mask)
     return descale
 
@@ -345,11 +388,11 @@ def masked_descale(src, target_w=None, target_h=None, kernel='bicubic', b=1/3, c
 def source(src, lsmas=False, depth=False, trims=None, dither_yuv=True) -> vs.VideoNode:
     """
     Open Video or Image Source
-    :param src: Video or Image source (format: string)
-    :param lsmas: force use lsmas (file with .m2ts extension will forced to use lsmas)
-    :param depth: Dither video (Disable with False, default: False (Use original bitdepth))
-    :param trims: Trim video (Integer + List type)
-    :param dither_yuv: Dither Image or Video to YUV subsample
+    :param src: str: Video or Image source (format: string)
+    :param lsmas: bool: force use lsmas (file with .m2ts extension will forced to use lsmas)
+    :param depth: int: Dither video (Disable with False, default: False (Use original bitdepth))
+    :param trims: list: Trim video (Integer + List type)
+    :param dither_yuv: bool: Dither Image or Video to YUV subsample
     """
     def parse_trim_data(trim_data, video):
         a, b = trim_data
@@ -362,7 +405,7 @@ def source(src, lsmas=False, depth=False, trims=None, dither_yuv=True) -> vs.Vid
 
         if b == 0:
             b = video.num_frames
-        elif b < 0:
+        else:
             b = video.num_frames - (abs(b) + 1)
 
         return a, b
@@ -401,27 +444,28 @@ def source(src, lsmas=False, depth=False, trims=None, dither_yuv=True) -> vs.Vid
     return src
 
 
-def adaptive_scaling(clip: vs.VideoNode, target_w=None, target_h=None, descale_range=[], kernel='bicubic', b=1/3, c=1/3, taps=3, iter_max=3, rescale=True, show_native_res=False, show_mask=False):
+def adaptive_scaling(clip: vs.VideoNode, target_w=None, target_h=None, descale_range=[], kernel='bicubic', b=1/3, c=1/3, taps=3, iter_max=3, rescale=True, show_native_res=False, show_mask=False, test_dmask=False):
     """
     n4ofunc.adaptive_scaling
     Descale within range and upscale it back to target_w and target_h
     If target are not defined, it will be using original resolution
 
-    Written originally by kageru, modified by NoAiOne.
+    Written originally by kageru, modified by N4O.
 
-    :vapoursynth.VideoNode clip:
-    :int target_w: Target upscaled width resolution
-    :int target_h: Target upscaled width resolution
-    :list descale_range: Descale range number in list
-    :str kernel: Descaling kernel
-    :float b: Bicubic Descale "b" num
-    :float c: Bicubic Descale "c" num
-    :int taps: Lanczos Descale "c" num
-    :int iter_max: Iterate mask with core.std.Maximum()
-    :bool show_mask: Show mask
+    :param clip: vapoursynth.VideoNode: A VideoNode object
+    :param taint target_w: Target upscaled width resolution
+    :param target_h: int: Target upscaled width resolution
+    :param descale_range: list: Descale range number in list
+    :param kernel: str: Descaling kernel
+    :param b: float: parameter for bicubic kernel
+    :param c: float: parameter for bicubic kernel
+    :param taps: int: parameter for lanczos kernel
+    :param iter_max: int: Iteration for mask, using core.std.Maximum
+    :param show_mask: bool: Show native mask that are used.
     """
     target_w = clip.width if target_w is None else target_w
     target_h = clip.height if target_h is None else target_h
+    kernel = kernel.lower()
     if not isinstance(descale_range, list):
         raise TypeError('adaptive_scaling: descale_range: must be a list containing 2 number')
 
@@ -447,29 +491,32 @@ def adaptive_scaling(clip: vs.VideoNode, target_w=None, target_h=None, descale_r
         if kernel == 'bilinear':
             return core.resize.Bilinear
         elif kernel == 'bicubic':
-            return partial(core.resize.Bicubic, filter_param_a=b, filter_param_b=c)
+            return core.resize.Bicubic
         elif kernel == 'lanczos':
-            return partial(core.resize.Lanczos, filter_param_a=taps)
+            return core.resize.Lanczos
         elif kernel == 'spline16':
             return core.resize.Spline16
         elif kernel == 'spline36':
             return core.resize.Spline36
 
     def VideoDescaler(b, c, taps, kernel):
-        if kernel.lower() == 'bilinear':
+        if kernel == 'bilinear':
             return core.descale.Debilinear
-        elif kernel.lower() == 'bicubic':
+        elif kernel == 'bicubic':
             return partial(core.descale.Debicubic, b=b, c=c)
-        elif kernel.lower() == 'lanczos':
+        elif kernel == 'lanczos':
             return partial(core.descale.Delanczos, taps=taps)
-        elif kernel.lower() == 'spline16':
+        elif kernel == 'spline16':
             return core.descale.Despline16
-        elif kernel.lower() == 'spline36':
+        elif kernel == 'spline36':
             return core.descale.Despline36
 
     def simple_descale(y: vs.VideoNode, h: int) -> tuple:
         down = global_clip_descaler(y, get_w(h), h)
-        up = global_clip_resizer(down, target_w, target_h)
+        if rescale:
+            up = global_clip_resizer(down, target_w, target_h)
+        else:
+            up = global_clip_resizer(down, y.width, y.height)
         diff = core.std.Expr([y, up], 'x y - abs').std.PlaneStats()
         return down, diff
 
@@ -483,13 +530,21 @@ def adaptive_scaling(clip: vs.VideoNode, target_w=None, target_h=None, descale_r
     descale_list = [a[0] for a in descale_listp]
     descale_props = [a[1] for a in descale_listp]
 
+    if not rescale:
+        y = global_clip_resizer(y, target_w, target_h)
+        clip32 = global_clip_resizer(clip32, target_w, target_h)
+
     def select(n, descale_list, f):
         errors = [x.props.PlaneStatsAverage for x in f]
         y_deb = descale_list[errors.index(min(errors))]
         dmask = core.std.Expr([y, global_clip_resizer(y_deb, target_w, target_h)], 'x y - abs 0.025 > 1 0 ?').std.Maximum()
         y_deb16 = fvf.Depth(y_deb, 16)
 
-        y_scaled = edi.nnedi3_rpow2(y_deb16, nns=4, correct_shift=True, width=target_w, height=target_h).fmtc.bitdepth(bits=32)
+        if rescale:
+            y_scaled = edi.nnedi3_rpow2(y_deb16, nns=4, correct_shift=True, width=target_w, height=target_h).fmtc.bitdepth(bits=32)
+        else:
+            y_scaled = global_clip_resizer(y_deb16, target_w, target_h).fmtc.bitdepth(bits=32)
+        dmask = global_clip_resizer(dmask, target_w, target_h)
         if show_native_res and not show_mask:
             y_scaled = core.text.Text(y_scaled, 'Native resolution for this frame: {}'.format(y_deb.height))
         return core.std.ClipToProp(y_scaled, dmask)
@@ -507,9 +562,13 @@ def adaptive_scaling(clip: vs.VideoNode, target_w=None, target_h=None, descale_r
     line = core.std.StackHorizontal([square()] * (target_w // 10))
     full = core.std.StackVertical([line] * (target_h // 10))
 
-    artifacts = core.misc.Hysteresis(global_clip_resizer(dmask, target_w, target_h, _format=vs.GRAYS), core.std.Expr([get_y(clip32).tcanny.TCanny(sigma=3), full], 'x y min'))
+    line_mask = global_clip_resizer(full, target_w, target_h)
+
+    artifacts = core.misc.Hysteresis(global_clip_resizer(dmask, target_w, target_h, _format=vs.GRAYS), core.std.Expr([get_y(clip32).tcanny.TCanny(sigma=3), line_mask], 'x y min'))
 
     ret_raw = kgf.retinex_edgemask(ref)
+    if not rescale:
+        ret_raw = global_clip_resizer(ret_raw, target_w, target_h)
     ret = ret_raw.std.Binarize(30).rgvs.RemoveGrain(3)
     mask = core.std.Expr([iterate(artifacts, core.std.Maximum, iter_max), ret.resize.Point(_format=vs.GRAYS)], 'y x -').std.Binarize(0.4)
     mask = mask.std.Inflate().std.Convolution(matrix=[1] * 9).std.Convolution(matrix=[1] * 9)
@@ -525,11 +584,10 @@ def adaptive_scaling(clip: vs.VideoNode, target_w=None, target_h=None, descale_r
 def SimpleFrameReplace(src: vs.VideoNode, src_frame: int, target_frame: str) -> vs.VideoNode:
     """
     A simple frame replacing, useful for replacing black frame with other frame from the same video
-    :param src: Video Source
-    :param src_frame: Video Frame number as Source for replacing
-    :param target_frame: Video Target frame to be replaced from src_frame
-
-    :target_frame: can be used as range, write it: `x-y`
+    :param src: vapoursynth.VideoNode: Video Source
+    :param src_frame: int: Video Frame number as Source for replacing
+    :param target_frame: str: Video Target frame to be replaced from src_frame
+                              can be used as range, write it: `x-y`
     """
     src_fpsnum = src.fps.numerator
     src_fpsden = src.fps.denominator
@@ -554,7 +612,7 @@ def SimpleFrameReplace(src: vs.VideoNode, src_frame: int, target_frame: str) -> 
     return pre + src_frame + post
 
 
-def better_planes(clips, props="avg", show_info=False):
+def better_planes(clips: vs.VideoNode, props="avg", show_info=False):
     """
     A naive function for picking the best planes from every frame from a list of video
 
@@ -563,22 +621,23 @@ def better_planes(clips, props="avg", show_info=False):
         - Avg: Highest Average PlaneStats
         - Min: Lowest Minimum PlaneStats
         - Max: Highest Maximum PlaneStats
-        - Both: Value from subtracting PlaneStatsMax with PlaneStatsMin
+        - Add: Value from subtracting PlaneStatsMax with PlaneStatsMin
     The best outcome plane will be returned
 
     `props` value must be:
     - For using PlaneStatsAverage as comparasion: "avg", "average", or "planestatsaverage"
     - For using PlaneStatsMin as comparasion: "min", "minimum", or "planestatsmin"
     - For using PlaneStatsMax as comparasion: "max", "maximum", or "planestatsmax"
-    - For subtracting PlaneStatsMax with PlaneStatsMin as comparasion: "both"
+    - For subtracting PlaneStatsMax with PlaneStatsMin as comparasion: "sub" or "subtract"
+    - For combining value of PlaneStatsMax with PlaneStatsMin as comparasion: "add" or "addition"
 
     `show_info` are just showing what input will be used
     if it's True (bool) it will show it.
     You can customize it by passing a list of string to `show_info`
 
-    :param clips: A list of vapoursynth.VideoNode
-    :param props: A list or string for comparing, if it's a list, the maximum is 3 (For Y, U, and V)
-    :param show_info: Show text for what source are used
+    :param clips: list: A list of vapoursynth.VideoNode object
+    :param props: list or str: A list or string for comparing, if it's a list, the maximum is 3 (For Y, U, and V)
+    :param show_info: bool: Show text for what source are used
 
     Example: 
     src = nao.better_planes(clips=[src_vbr, src_hevc, src_cbr], props=["max", "avg"], show_info=["AMZN VBR", "AMZN HEVC", "AMZN CBR"])
@@ -586,78 +645,44 @@ def better_planes(clips, props="avg", show_info=False):
     src = nao.better_planes(clips=[src1, src2], props="max")
     """
 
-    avg_ = ["avg", "average", "planestatsaverage"]
-    min_ = ["min", "minimum", "planestatsmin"]
-    max_ = ["max", "maximum", "planestatsmax"]
-    other_ = ["both"]
+    allowed_props = {
+        "avg": "PlaneStatsAverage",
+        "min": "PlaneStatsMin",
+        "max": "PlaneStatsMax",
+        "average": "PlaneStatsAverage",
+        "minimum": "PlaneStatsMin",
+        "maximum": "PlaneStatsMax",
+        "planestatsaverage": "PlaneStatsAverage",
+        "planestatsmin": "PlaneStatsMin",
+        "planestatsmax": "PlaneStatsMax",
+        "add": "BothAdd",
+        "sub": "BothSubtract",
+        "addition": "BothAdd",
+        "subtract": "BothSubtract"
+    }
 
     if isinstance(props, str):
         props = props.lower()
-        if props in avg_:
-            props_ = ["PlaneStatsAverage" for i in range(3)]
-        elif props in min_:
-            props_ = ["PlaneStatsMin" for i in range(3)]
-        elif props in max_:
-            props_ = ["PlaneStatsMax" for i in range(3)]
-        elif props in other_:
-            props_ = ["Both" for i in range(3)]
+        if props in allowed_props:
+            props_ = [allowed_props[props] for i in range(3)]
         else:
-            raise ValueError("better_planes: `props` must be a `min` or `max` or `avg`")
+            raise ValueError("better_planes: `props` must be a `min` or `max` or `avg` or `add` or `sub`")
     elif isinstance(props, list):
         up_t = len(props)
         props_ = []
         if up_t == 1:
             t_props_ = [props[0] for i in range(3)]
-            for n, i in enumerate(t_props_):
-                if i in avg_:
-                    props_.append("PlaneStatsAverage")
-                elif i in min_:
-                    props_.append("PlaneStatsMin")
-                elif i in max_:
-                    props_.append("PlaneStatsMax")
-                elif i in other_:
-                    props_.append("Both")
-                else:
-                    raise ValueError("better_planes: `props[{}]` must be a `min` or `max` or `avg`".format(n))
         elif up_t == 2:
             t_props_ = [props[0], props[1], props[1]]
-            for n, i in enumerate(t_props_):
-                if i in avg_:
-                    props_.append("PlaneStatsAverage")
-                elif i in min_:
-                    props_.append("PlaneStatsMin")
-                elif i in max_:
-                    props_.append("PlaneStatsMax")
-                elif i in other_:
-                    props_.append("Both")
-                else:
-                    raise ValueError("better_planes: `props[{}]` must be a `min` or `max` or `avg`".format(n))
         elif up_t == 3:
             t_props_ = props
-            for n, i in enumerate(t_props_):
-                if i in avg_:
-                    props_.append("PlaneStatsAverage")
-                elif i in min_:
-                    props_.append("PlaneStatsMin")
-                elif i in max_:
-                    props_.append("PlaneStatsMax")
-                elif i in other_:
-                    props_.append("Both")
-                else:
-                    raise ValueError("better_planes: `props[{}]` must be a `min` or `max` or `avg`".format(n))
         elif up_t > 3:
             t_props_ = props[:3]
-            for n, i in enumerate(t_props_):
-                if i in avg_:
-                    props_.append("PlaneStatsAverage")
-                elif i in min_:
-                    props_.append("PlaneStatsMin")
-                elif i in max_:
-                    props_.append("PlaneStatsMax")
-                elif i in other_:
-                    props_.append("Both")
-                else:
-                    raise ValueError("better_planes: `props[{}]` must be a `min` or `max` or `avg`".format(n))
+        for n, i in enumerate(t_props_):
+            if i in allowed_props:
+                props_.append(allowed_props[i.lower()])
+            else:
+                raise ValueError("better_planes: `props[{}]` must be a `min` or `max` or `avg` or `add` or `sub``".format(n))
     else:
         raise ValueError("better_planes: props must be a string or a list")
 
@@ -680,19 +705,18 @@ def better_planes(clips, props="avg", show_info=False):
             clips2_.append(core.std.ShufflePlanes(clip, 1, vs.GRAY))
             clips3_.append(core.std.ShufflePlanes(clip, 2, vs.GRAY))
 
-    def choose_plane(n, f, clist, pd):
+    def select_best(n, f, clist, pd):
         clip_data = []
-        if pd == "Both":
+        if pd == "BothAdd":
+            for p in f:
+                clip_data.append(p.props['PlaneStatsMax'] + p.props['PlaneStatsMin'])
+        elif pd == "BothSubtract":
             for p in f:
                 clip_data.append(p.props['PlaneStatsMax']-p.props['PlaneStatsMin'])
         else:
             for p in f:
                 clip_data.append(p.props[pd])
-        if pd == "PlaneStatsMin":
-            best_clip = min(clip_data)
-        else:
-            best_clip = max(clip_data)
-        return clist[clip_data.index(best_clip)]
+        return clist[clip_data.index(max(clip_data))]
 
     _clips_prop1 = []
     _clips_prop2 = []
@@ -704,21 +728,112 @@ def better_planes(clips, props="avg", show_info=False):
     for clip in clips3_:
         _clips_prop3.append(clip.std.PlaneStats(plane=0))
 
-    y_val = core.std.FrameEval(clips1_[0], partial(choose_plane, clist=clips1_, pd=props_[0]), prop_src=_clips_prop1)
-    u_val = core.std.FrameEval(clips2_[0], partial(choose_plane, clist=clips2_, pd=props_[1]), prop_src=_clips_prop2)
-    v_val = core.std.FrameEval(clips3_[0], partial(choose_plane, clist=clips3_, pd=props_[2]), prop_src=_clips_prop3)
+    y_val = core.std.FrameEval(clips1_[0], partial(select_best, clist=clips1_, pd=props_[0]), prop_src=_clips_prop1)
+    u_val = core.std.FrameEval(clips2_[0], partial(select_best, clist=clips2_, pd=props_[1]), prop_src=_clips_prop2)
+    v_val = core.std.FrameEval(clips3_[0], partial(select_best, clist=clips3_, pd=props_[2]), prop_src=_clips_prop3)
 
     return core.std.ShufflePlanes([y_val, u_val, v_val], [0], vs.YUV)
+
+# TODO: Maybe add chroma support or something
+def better_frame(clips: vs.VideoNode, props="avg", show_info=False):
+    """
+    A naive function for picking the best frames from a list of video (Basically better_planes without checking chroma plane)
+
+    This only check luma plane (Y plane) not like better_planes that check every plane
+    Then using defined `props` they will be compared:
+        - Avg: Highest Average PlaneStats
+        - Min: Lowest Minimum PlaneStats
+        - Max: Highest Maximum PlaneStats
+        - Add: Value from subtracting PlaneStatsMax with PlaneStatsMin
+    The best outcome plane will be returned
+
+    `props` value must be:
+    - For using PlaneStatsAverage as comparasion: "avg", "average", or "planestatsaverage"
+    - For using PlaneStatsMin as comparasion: "min", "minimum", or "planestatsmin"
+    - For using PlaneStatsMax as comparasion: "max", "maximum", or "planestatsmax"
+    - For subtracting PlaneStatsMax with PlaneStatsMin as comparasion: "sub" or "subtract"
+    - For combining value of PlaneStatsMax with PlaneStatsMin as comparasion: "add" or "addition"
+
+    `show_info` are just showing what input will be used
+    if it's True (bool) it will show it.
+    You can customize it by passing a list of string to `show_info`
+
+    :param clips: list: A list of vapoursynth.VideoNode object
+    :param props: str: A string of allowed props
+    :param show_info: bool: Show text for what source are used
+
+    Example:
+    src = nao.better_frame(clips=[src_vbr, src_hevc, src_cbr], props="add", show_info=["AMZN VBR", "AMZN HEVC", "AMZN CBR"])
+    src = nao.better_frame(clips=[src1, src2, src3], show_info=["CR", "Funi", "Abema"])
+    src = nao.better_frame(clips=[src1, src2], props="max")
+    """
+
+    allowed_props = {
+        "avg": "PlaneStatsAverage",
+        "min": "PlaneStatsMin",
+        "max": "PlaneStatsMax",
+        "average": "PlaneStatsAverage",
+        "minimum": "PlaneStatsMin",
+        "maximum": "PlaneStatsMax",
+        "planestatsaverage": "PlaneStatsAverage",
+        "planestatsmin": "PlaneStatsMin",
+        "planestatsmax": "PlaneStatsMax",
+        "add": "BothAdd",
+        "sub": "BothSubtract",
+        "addition": "BothAdd",
+        "subtract": "BothSubtract"
+    }
+
+    if isinstance(props, str):
+        props = props.lower()
+        if props in allowed_props:
+            props_ = allowed_props[props]
+        else:
+            raise ValueError("better_frame: `props` must be a `min` or `max` or `avg` or `add` or `sub`")
+    else:
+        raise ValueError("better_frame: props must be a string")
+
+    clips_ = []
+    if isinstance(show_info, list):
+        for n, clip in enumerate(clips):
+            clips_.append(core.text.Text(clip, "{} - ({})".format(show_info[n], props_), 7))
+    elif isinstance(show_info, bool) and show_info:
+        for n, clip in enumerate(clips):
+            clips_.append(core.text.Text(clip, "Input {} - ({})".format(n+1, props_), 7))
+    else:
+        for clip in clips:
+            clips_.append(clip)
+
+
+    def select_best(n, f, clist, pd):
+        clip_data = []
+        if pd == "BothAdd":
+            for p in f:
+                clip_data.append(p.props['PlaneStatsMax'] + p.props['PlaneStatsMin'])
+        elif pd == "BothSubtract":
+            for p in f:
+                clip_data.append(p.props['PlaneStatsMax']-p.props['PlaneStatsMin'])
+        else:
+            for p in f:
+                clip_data.append(p.props[pd])
+        return clist[clip_data.index(max(clip_data))]
+
+    _clips_prop = []
+    for clip in clips_:
+        _clips_prop.append(clip.std.PlaneStats(plane=0))
+
+    return core.std.FrameEval(clips_[1], partial(select_best, clist=clips_, pd=props_), prop_src=_clips_prop)
 
 
 src = source
 descale = masked_descale
 antiedge = antiedgemask
-sfr = SimpleFrameReplace
 adaptive_degrain = adaptive_smdegrain
 adaptive_rescale = partial(adaptive_scaling, rescale=True)
+adaptive_descale = partial(adaptive_scaling, rescale=False)
+sfr = SimpleFrameReplace
 bplanes = better_planes
-#adaptive_descale = partial(adaptive_scaling, rescale=False) # will be written later
+bframe = better_frame
 
 
 ######### Below here is mpeg2stinx script #########
