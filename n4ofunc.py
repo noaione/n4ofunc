@@ -138,6 +138,41 @@ def nDeHalo(clp=None, rx=None, ry=None, darkstr=None, brightstr=None, lowsens=No
     return core.std.MaskedMerge(fc, final, mask)
 
 
+def check_diff(src1: vs.VideoNode, src2: vs.VideoNode, threshold: float = 0.1):
+    src1_cf = src1.format.color_family
+    src2_cf = src2.format.color_family
+    src1_bits = src1.format.bits_per_sample
+    src2_bits = src2.format.bits_per_sample
+
+    if src1.num_frames != src2.num_frames:
+        raise ValueError('check_diff: src1 and src2 total frames are not the same')
+
+    if src1_cf != vs.RGB:
+        src1 = src1.resize.Point(format=vs.RGBS, matrix_in_s='709')
+    if src2_cf != vs.RGB:
+        src2 = src2.resize.Point(format=vs.RGBS, matrix_in_s='709')
+
+    if src1_bits != 8:
+        src1 = src1.fmtc.bitdepth(bits=8)
+    if src2_bits != 8:
+        src2 = src2.fmtc.bitdepth(bits=8)
+
+    src1_gray = src1.std.ShufflePlanes(0, vs.GRAY)
+    src2_gray = src2.std.ShufflePlanes(0, vs.GRAY)
+
+    n = 0
+    for i, f in enumerate(core.std.PlaneStats(src1_gray, src2_gray).frames()):
+        print('[@] check_diff: Processing Frame {}/{} ({})'.format(i, src1_gray.num_frames, f.props["PlaneStatsDiff"]), end='\r')
+        if f.props["PlaneStatsDiff"] >= threshold:
+            print('', end='\n')
+            print('[@] check_diff: Difference detected: Frame {}'.format(i))
+            print('', end='\n')
+            n += 1
+
+    if n == 0:
+        print('[@] check_diff: no significant difference found from current threshold')
+
+
 def save_difference(src1: vs.VideoNode, src2: vs.VideoNode, threshold: float = 0.1, output_fn: list = ['src1', 'src2']):
     """
     n4ofunc.save_difference
