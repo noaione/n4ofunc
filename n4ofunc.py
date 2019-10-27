@@ -248,23 +248,92 @@ def save_difference(src1: vs.VideoNode, src2: vs.VideoNode, threshold: float = 0
         print('[!!] CTRL+C Pressed, stopping...')
 
 
-def adaptive_smdegrain(src, thSAD=None, thSADC=None, luma_scaling=None, area='light', iter_edge=0, show_mask=False):
+def adaptive_degrain(src, *args, **kwargs):
     """
-    Some adaptive degrain that will degrain according to area determined (will not affect lineart)
+    Placeholder
     """
-    if thSAD is None:
-        thSAD = 150
-    if thSADC is None:
-        thSADC = thSAD
+    raise Exception('This function has been deleted, and moved to adaptive_degrain2 with better support for other degrainer, check the docstring for more info')
 
+
+def adaptive_degrain2(src, luma_scaling=None, kernel='smdegrain', area='light', iter_edge=0, show_mask=False, **degrain_args):
+    """
+    An adaptive degrainer that took kageru adaptive_grain function and apply a degrainer of choice
+
+    Available degrain kernel are:
+    - SMDegrain
+    - KNLMeansCL
+    - TNLMeansCL
+    - BM3D
+    - DFTTest
+
+    :param src: vapoursynth.VideoNode: A VideoNode class
+    :param luma_scaling: int: a luma scaling for kageru adaptive_grain mask
+    :param kernel: str: A kernel that will be used for degraining
+    :param area: str: Area that will be degrained (light area or dark area)
+    :param iter_edge: int: Edge iteration that will make sure lineart not to get degrained too
+    :param show_mask: bool: Show mask that will be used for degraining
+    :param degrain_args: kwargs: A kernel kwargs that will be passed onto degrainer kernel arguments
+
+    :return: vapoursynth.VideoNode
+    """
+    kernel_kwargs = {
+        'smdegrain': ['tr', 'thSAD', 'thSADC', 'RefineMotion', 'contrasharp', 'CClip', 'interlaced', 'tff', 'plane', 'Globals',
+                      'pel', 'subpixel', 'prefilter', 'mfilter', 'blksize', 'overlap', 'search', 'truemotion', 'MVglobal', 'dct',
+                      'limit', 'limitc', 'thSCD1', 'thSCD2', 'chroma', 'hpad', 'vpad', 'Str', 'Amp'],
+        'knlmeanscl': ['d', 'a', 's', 'h', 'channels', 'wmode', 'wref', 'rclip', 'device_type',
+                       'device_id', 'ocl_x', 'ocl_y', 'ocl_r', 'info'],
+        'tnlmeanscl': ['ax', 'ay', 'az', 'sx', 'sy', 'bx', 'by', 'a', 'h', 'ssd'],
+        'bm3d': ['sigma', 'radius1', 'radius2', 'profile1', 'profile2', 'refine', 'pre', 'ref', 'psample',
+                 'matrix', 'full', 'output', 'css', 'depth', 'sample', 'dither', 'useZ', 'prefer_props',
+                 'ampo', 'ampn', 'dyn', 'staticnoise', 'cu_kernel', 'cu_taps', 'cu_a1', 'cu_a2', 'cu_cplace',
+                 'cd_kernel', 'cd_taps', 'cd_a1', 'cd_a2', 'cd_cplace', 'cd_a1', 'cd_a2', 'cd_cplace',
+                 'block_size1', 'block_step1', 'group_size1', 'bm_range1', 'bm_step1', 'ps_num1', 'ps_range1', 'ps_step1', 'th_mse1',
+                 'block_size2', 'block_step2', 'group_size2', 'bm_range2', 'bm_step2', 'ps_num2', 'ps_range2', 'ps_step2', 'th_mse2', 'hard_thr'],
+        'dfttest': ['ftype', 'sigma', 'sigma2', 'pmin', 'pmax', 'sbsize', 'smode', 'sosize', 'tbsize', 'tmode', 'tosize', 'swin', 'twin', 
+                    'sbeta', 'tbeta', 'zmean', 'f0beta', 'nstring', 'sstring', 'ssx', 'ssy', 'sst', 'planes', 'opt']
+    }
+
+    valid_kernels = {
+        "smd": "smdegrain",
+        "bm3d": "bm3d",
+        "dft": "dfttest",
+        "knlm": "knlmeanscl",
+        "tnlm": "tnlmeanscl",
+        "knl": "knlmeanscl",
+        "tnl": "tnlmeanscl",
+        "smdegrain": "smdegrain",
+        "knlmeanscl": "knlmeanscl",
+        "tnlmeanscl": "tnlmeanscl",
+        "dfttest": "dfttest"
+    }
+
+    if not isinstance(src, vs.VideoNode):
+        raise ValueError("adaptive_degrain: 'src' must be a clip")
     if luma_scaling is None:
         luma_scaling = 30
-
     if area not in ['dark', 'light']:
-        raise ValueError('n4ofunc.adaptive_smdegrain: `area` can only be: `light` and `dark`')
+        raise ValueError('adaptive_degrain: `area` can only be: `light` and `dark`')
+
+    kernel = kernel.lower()
+
+    if kernel not in valid_kernels:
+        raise ValueError("adaptive_degrain: 'kernel' {} is not exist or not supported".format(kernel))
+
+    kernel = valid_kernels[kernel]
+
+    for arg in degrain_args:
+        if arg not in kernel_kwargs[kernel]:
+            raise ValueError('adaptive_degrain' + ": '" + arg + "' is not a valid argument for " + kernel)
+
+    degrainfuncs = {
+        'smdegrain': (lambda src: haf.SMDegrain(src, **degrain_args)),
+        'bm3d': (lambda src: mvf.BM3D(src, **degrain_args)),
+        'knlmeanscl': (lambda src: core.knlm.KNLMeansCL(src, **degrain_args)),
+        'tnlmeanscl': (lambda src: core.tnlm.TNLMeans(src, **degrain_args)),
+        'dfttest': (lambda src: core.dfttest.DFTTest(src, **degrain_args)),
+    }
 
     adaptmask = kgf.adaptive_grain(src, luma_scaling=luma_scaling, show_mask=True)
-
     y_plane = get_y(src)
 
     if area == 'light':
@@ -273,14 +342,14 @@ def adaptive_smdegrain(src, thSAD=None, thSADC=None, luma_scaling=None, area='li
     limitx = y_plane.std.Convolution([-1, -2, -1, 0, 0, 0, 1, 2, 1], saturate=False)
     limity = y_plane.std.Convolution([-1, 0, 1, -2, 0, 2, -1, 0, 1], saturate=False)
     limit = core.std.Expr([limitx, limity], 'x y max')
-    limit = iterate(limit, core.std.Maximum, iter_edge)
+    limit = iterate(limit, core.std.Inflate, iter_edge)
 
     mask = core.std.Expr([adaptmask, limit], 'x y -')
 
     if show_mask:
         return mask
 
-    fil = haf.SMDegrain(src, thSAD=thSAD, thSADC=thSADC)
+    fil = degrainfuncs[kernel](src)
 
     return core.std.MaskedMerge(src, fil, mask)
 
@@ -863,7 +932,11 @@ def better_frame(clips: vs.VideoNode, props="avg", show_info=False):
 src = source
 descale = masked_descale
 antiedge = antiedgemask
-adaptive_degrain = adaptive_smdegrain
+adaptive_bm3d = partial(adaptive_degrain2, kernel='bm3d')
+adaptive_dfttest = partial(adaptive_degrain2, kernel='dfttest')
+adaptive_knlm = partial(adaptive_degrain2, kernel='knlm')
+adaptive_tnlm = partial(adaptive_degrain2, kernel='tnlm')
+adaptive_smdegrain = partial(adaptive_degrain2, kernel='smd')
 adaptive_rescale = partial(adaptive_scaling, rescale=True)
 adaptive_descale = partial(adaptive_scaling, rescale=False)
 sfr = SimpleFrameReplace
