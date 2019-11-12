@@ -27,7 +27,6 @@ Main Function:
 Utility:
     is_extension
     register_f
-    check_diff
     antiedgemask
     simple_native_mask
 """
