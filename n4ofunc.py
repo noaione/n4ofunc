@@ -7,7 +7,7 @@ import kagefunc as kgf
 import mvsfunc as mvf
 import vapoursynth as vs
 
-from vsutil import get_y, is_image, iterate, split, get_w
+from vsutil import get_y, is_image, iterate, split, get_w, insert_clip
 
 """
 Something something N4O vapoursynth function something something
@@ -22,6 +22,7 @@ Main Function:
     SimpleFrameReplace
     better_planes
     better_frame
+    recursive_apply_mask
 
 Utility:
     is_extension
@@ -64,43 +65,8 @@ def register_f(c: vs.VideoNode, yuv444=False) -> vs.VideoNode.format:
         0 if yuv444 else c.format.subsampling_w
     )
 
-# TODO: Merge with save_difference
-def check_diff(src1: vs.VideoNode, src2: vs.VideoNode, threshold: float = 0.1):
-    src1_cf = src1.format.color_family
-    src2_cf = src2.format.color_family
-    src1_bits = src1.format.bits_per_sample
-    src2_bits = src2.format.bits_per_sample
 
-    if src1.num_frames != src2.num_frames:
-        raise ValueError('check_diff: src1 and src2 total frames are not the same')
-
-    if src1_cf != vs.RGB:
-        src1 = src1.resize.Point(format=vs.RGBS, matrix_in_s='709')
-    if src2_cf != vs.RGB:
-        src2 = src2.resize.Point(format=vs.RGBS, matrix_in_s='709')
-
-    if src1_bits != 8:
-        src1 = src1.fmtc.bitdepth(bits=8)
-    if src2_bits != 8:
-        src2 = src2.fmtc.bitdepth(bits=8)
-
-    src1_gray = src1.std.ShufflePlanes(0, vs.GRAY)
-    src2_gray = src2.std.ShufflePlanes(0, vs.GRAY)
-
-    n = 0
-    for i, f in enumerate(core.std.PlaneStats(src1_gray, src2_gray).frames()):
-        print('[@] check_diff: Processing Frame {}/{} ({})'.format(i, src1_gray.num_frames, f.props["PlaneStatsDiff"]), end='\r')
-        if f.props["PlaneStatsDiff"] >= threshold:
-            print('', end='\n')
-            print('[@] check_diff: Difference detected: Frame {}'.format(i))
-            print('', end='\n')
-            n += 1
-
-    if n == 0:
-        print('[@] check_diff: no significant difference found from current threshold')
-
-
-def save_difference(src1: vs.VideoNode, src2: vs.VideoNode, threshold: float = 0.1, output_fn: list = ['src1', 'src2']):
+def save_difference(src1: vs.VideoNode, src2: vs.VideoNode, threshold: float = 0.1, output_fn: list = ['src1', 'src2'], check_only=False):
     """
     n4ofunc.save_difference
 
@@ -111,6 +77,7 @@ def save_difference(src1: vs.VideoNode, src2: vs.VideoNode, threshold: float = 0
     :param src2: vapoursynth.VideoNode: Video Source 2 as the "new" video
     :param threshold: float: Luma threshold between src1 and src2
     :param output_fn: list: Output name for source (default are `src1` and `src2`)
+    :param check_only: bool: Do a check only without saving image (will output if difference detected).
     """
     import os
     import shutil
@@ -130,7 +97,7 @@ def save_difference(src1: vs.VideoNode, src2: vs.VideoNode, threshold: float = 0
     dirsave = cwd + '\\frame_difference'
     print('[@] save_difference: Starting process')
 
-    if not os.path.isdir(dirsave):
+    if not os.path.isdir(dirsave) and not check_only:
         os.mkdir(dirsave)
 
     if src1_cf != vs.RGB:
@@ -152,16 +119,26 @@ def save_difference(src1: vs.VideoNode, src2: vs.VideoNode, threshold: float = 0
         for i, f in enumerate(core.std.PlaneStats(src1_gray, src2_gray).frames()):
             print('[@] save_difference: Processing Frame {}/{} ({})'.format(i, src1_gray.num_frames, f.props["PlaneStatsDiff"]), end='\r')
             if f.props["PlaneStatsDiff"] >= threshold:
-                dataset['{n}_{fn}'.format(n=i, fn=out_fn1)] = [src1[i], i, f.props['PlaneStatsDiff']]
-                dataset['{n}_{fn}'.format(n=i, fn=out_fn2)] = [src2[i], i, f.props['PlaneStatsDiff']]
+                if check_only:
+                    print('', end='\n')
+                    print('[@] save_difference: Difference detected: Frame {}'.format(i))
+                    print('', end='\n')
+                else:
+                    dataset['{n}_{fn}'.format(n=i, fn=out_fn1)] = [src1[i], i, f.props['PlaneStatsDiff']]
+                    dataset['{n}_{fn}'.format(n=i, fn=out_fn2)] = [src2[i], i, f.props['PlaneStatsDiff']]
                 n += 1
         print('', end='\n')
     except KeyboardInterrupt:
         print('', end='\n')
         print('[!!] CTRL+C Pressed, halting frame processing...')
     if n == 0:
-        print('[@] save_difference: no significant difference found from current threshold')
-        return shutil.rmtree(dirsave)
+        print('[@] save_difference: no significant difference found with current threshold.')
+        if not check_only:
+            shutil.rmtree(dirsave)
+        return
+
+    if check_only:
+        return
 
     print('[@] save_difference: Saving image...')
     print('[#] Total found: {}'.format(n))
@@ -630,6 +607,20 @@ def SimpleFrameReplace(src: vs.VideoNode, src_frame: int, target_frame: str) -> 
     return pre + src_frame + post
 
 
+def select_best(n, f, clist, pd):
+    clip_data = []
+    if pd == "BothAdd":
+        for p in f:
+            clip_data.append(p.props['PlaneStatsMax'] + p.props['PlaneStatsMin'])
+    elif pd == "BothSubtract":
+        for p in f:
+            clip_data.append(p.props['PlaneStatsMax']-p.props['PlaneStatsMin'])
+    else:
+        for p in f:
+            clip_data.append(p.props[pd])
+    return clist[clip_data.index(max(clip_data))]
+
+
 def better_planes(clips: vs.VideoNode, props="avg", show_info=False):
     """
     A naive function for picking the best planes from every frame from a list of video
@@ -723,19 +714,6 @@ def better_planes(clips: vs.VideoNode, props="avg", show_info=False):
             clips2_.append(core.std.ShufflePlanes(clip, 1, vs.GRAY))
             clips3_.append(core.std.ShufflePlanes(clip, 2, vs.GRAY))
 
-    def select_best(n, f, clist, pd):
-        clip_data = []
-        if pd == "BothAdd":
-            for p in f:
-                clip_data.append(p.props['PlaneStatsMax'] + p.props['PlaneStatsMin'])
-        elif pd == "BothSubtract":
-            for p in f:
-                clip_data.append(p.props['PlaneStatsMax']-p.props['PlaneStatsMin'])
-        else:
-            for p in f:
-                clip_data.append(p.props[pd])
-        return clist[clip_data.index(max(clip_data))]
-
     _clips_prop1 = []
     _clips_prop2 = []
     _clips_prop3 = []
@@ -752,7 +730,7 @@ def better_planes(clips: vs.VideoNode, props="avg", show_info=False):
 
     return core.std.ShufflePlanes([y_val, u_val, v_val], [0], vs.YUV)
 
-# TODO: Maybe add chroma support or something and try to merge with better_planes
+# TODO: Maybe add chroma support or something
 def better_frame(clips: vs.VideoNode, props="avg", show_info=False):
     """
     A naive function for picking the best frames from a list of video (Basically better_planes without checking chroma plane)
@@ -822,25 +800,52 @@ def better_frame(clips: vs.VideoNode, props="avg", show_info=False):
         for clip in clips:
             clips_.append(clip)
 
-
-    def select_best(n, f, clist, pd):
-        clip_data = []
-        if pd == "BothAdd":
-            for p in f:
-                clip_data.append(p.props['PlaneStatsMax'] + p.props['PlaneStatsMin'])
-        elif pd == "BothSubtract":
-            for p in f:
-                clip_data.append(p.props['PlaneStatsMax']-p.props['PlaneStatsMin'])
-        else:
-            for p in f:
-                clip_data.append(p.props[pd])
-        return clist[clip_data.index(max(clip_data))]
-
     _clips_prop = []
     for clip in clips_:
         _clips_prop.append(clip.std.PlaneStats(plane=0))
 
     return core.std.FrameEval(clips_[1], partial(select_best, clist=clips_, pd=props_), prop_src=_clips_prop)
+
+
+def recursive_apply_mask(src1, src2, mask_folder):
+    """
+    Recursively check `mask_folder` for an .png file
+    After it found all of them, it will loop it and apply the mask
+
+    Acceptable filename format:
+    frameNum.png
+    Example: 2500.png
+
+    :param src1: vapoursynth.VideoNode: A VideoNode clip (Format must be the same as src2)
+    :param src2: vapoursynth.VideoNode: A VideoNode clip (Format must be the same as src1)
+    :param mask_folder: str: A folder path that contains the masks
+    :return: src1
+    """
+    import os
+    import glob
+
+    imwri = core.imwri
+    masks = glob.glob(mask_folder.rstrip('/').rstrip('\\') + '/*.png')
+    for mask in masks:
+        im = fvf.Depth(
+            imwri.Read(mask).resize.Point(
+                format=vs.GRAYS,
+                matrix_s='709'
+            ),
+            src1.format.bits_per_sample).std.BoxBlur(
+                hradius=3,
+                vradius=3
+            ).std.AssumeFPS(
+                fpsnum=src1.fps.numerator, fpsden=src1.fps.denominator
+        )
+
+        frame = int(os.path.splitext(os.path.basename(mask))[0])
+        src1N, src2N = src1[frame], src2[frame]
+
+        src_masked = core.std.MaskedMerge(src1N, src2N, im)
+        src1 = insert_clip(src1, src_masked, frame)
+
+    return src1
 
 
 src = source
@@ -853,6 +858,7 @@ adaptive_tnlm = partial(adaptive_degrain2, kernel='tnlm')
 adaptive_smdegrain = partial(adaptive_degrain2, kernel='smd')
 adaptive_rescale = partial(adaptive_scaling, rescale=True)
 adaptive_descale = partial(adaptive_scaling, rescale=False)
+check_diff = partial(save_difference, check_only=True)
 sfr = SimpleFrameReplace
 bplanes = better_planes
 bframe = better_frame

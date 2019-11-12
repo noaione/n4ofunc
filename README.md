@@ -21,3 +21,4 @@ A simple function collection that I used
 7. SimpleFrameReplace
 8. better_planes
 9. better_frame
+10. recursive_apply_mask
