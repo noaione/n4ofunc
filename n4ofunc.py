@@ -9,6 +9,28 @@ import vapoursynth as vs
 
 from vsutil import get_y, is_image, iterate, split, get_w
 
+"""
+Something something N4O vapoursynth function something something
+Refer to docstring for more info
+
+Main Function:
+    save_difference
+    adaptive_degrain2
+    masked_descale
+    source
+    adaptive_scaling
+    SimpleFrameReplace
+    better_planes
+    better_frame
+
+Utility:
+    is_extension
+    register_f
+    check_diff
+    antiedgemask
+    simple_native_mask
+"""
+
 core = vs.core
 
 #helper
