@@ -13,12 +13,12 @@ A simple function collection that I used
 
 
 **Main Function**:
-1. save_difference
-2. adaptive_degrain2
-3. masked_descale
-4. source
-5. adaptive_scaling
-7. SimpleFrameReplace
-8. better_planes
-9. better_frame
-10. recursive_apply_mask
+1. adaptive_degrain2
+2. adaptive_scaling
+3. better_frame
+4. better_planes
+5. masked_descale
+6. recursive_apply_mask
+7. save_difference
+8. SimpleFrameReplace
+9. source
