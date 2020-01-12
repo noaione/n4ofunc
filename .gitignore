@@ -2,3 +2,4 @@
 sekrit
 
 *.bat
+__pycache__

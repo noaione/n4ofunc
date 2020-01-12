@@ -1,5 +1,6 @@
+import sys
 from functools import partial
-from typing import Optional, List, TypeVar
+from typing import List, Optional, TypeVar, Union
 
 import fvsfunc as fvf
 import havsfunc as haf
@@ -8,6 +9,11 @@ import mvsfunc as mvf
 import nnedi3_rpow2 as edi
 import vapoursynth as vs
 from vsutil import get_w, get_y, insert_clip, is_image, iterate
+
+try:
+    import numpy as np
+except ImportError:
+    pass
 
 IntegerFloat = TypeVar('IntegerFloat', int, float)
 
@@ -435,7 +441,7 @@ def source(src: vs.VideoNode, lsmas: bool = False, depth: Optional[int] = False,
             a = abs(a)
 
         if b == 0:
-            b = video.num_frames
+            b = video.num_frames - 1
         else:
             b = video.num_frames - (abs(b) + 1)
 
@@ -669,8 +675,19 @@ def select_best(n, f, clist, pd):
             clip_data.append(p.props[pd])
     return clist[clip_data.index(max(clip_data))]
 
+def select_best2(n, clist, fun):
+    """
+    Helper FrameEval function for better_planes and better_frame
+    """
+    numpy_array = []
+    for video in clist:
+        frame = video.get_frame(n)
+        arr = np.asarray(frame.get_read_array(0))
+        numpy_array.append(arr.sum())
+    return clist[numpy_array.index(fun(numpy_array))]
 
-def better_planes(clips: List[vs.VideoNode], props: str = "avg", show_info: bool = False):
+
+def better_planes(clips: List[vs.VideoNode], props: Union[str, list] = "avg", show_info: bool = False):
     """
     A naive function for picking the best planes from every frame from a list of video
 
@@ -688,6 +705,7 @@ def better_planes(clips: List[vs.VideoNode], props: str = "avg", show_info: bool
     - For using PlaneStatsMax as comparasion: "max", "maximum", or "planestatsmax"
     - For subtracting PlaneStatsMax with PlaneStatsMin as comparasion: "sub" or "subtract"
     - For combining value of PlaneStatsMax with PlaneStatsMin as comparasion: "add" or "addition"
+    - NEW: If you have numpy installed, you can only use "max" or "min"
 
     `show_info` are just showing what input will be used
     if it's True (bool) it will show it.
@@ -705,28 +723,39 @@ def better_planes(clips: List[vs.VideoNode], props: str = "avg", show_info: bool
     src = nao.better_planes(clips=[src1, src2], props="max")
     """
 
-    allowed_props = {
-        "avg": "PlaneStatsAverage",
-        "min": "PlaneStatsMin",
-        "max": "PlaneStatsMax",
-        "average": "PlaneStatsAverage",
-        "minimum": "PlaneStatsMin",
-        "maximum": "PlaneStatsMax",
-        "planestatsaverage": "PlaneStatsAverage",
-        "planestatsmin": "PlaneStatsMin",
-        "planestatsmax": "PlaneStatsMax",
-        "add": "BothAdd",
-        "sub": "BothSubtract",
-        "addition": "BothAdd",
-        "subtract": "BothSubtract"
-    }
+    if 'numpy' in sys.modules:
+        if isinstance(props, str):
+            if props == "avg":
+                props = "max"
+        allowed_props = {
+            "min": min,
+            "max": max,
+            "minimum": min,
+            "maximum": max
+        }
+    else:
+        allowed_props = {
+            "avg": "PlaneStatsAverage",
+            "min": "PlaneStatsMin",
+            "max": "PlaneStatsMax",
+            "average": "PlaneStatsAverage",
+            "minimum": "PlaneStatsMin",
+            "maximum": "PlaneStatsMax",
+            "planestatsaverage": "PlaneStatsAverage",
+            "planestatsmin": "PlaneStatsMin",
+            "planestatsmax": "PlaneStatsMax",
+            "add": "BothAdd",
+            "sub": "BothSubtract",
+            "addition": "BothAdd",
+            "subtract": "BothSubtract"
+        }
 
     if isinstance(props, str):
         props = props.lower()
         if props in allowed_props:
             props_ = [allowed_props[props] for i in range(3)]
         else:
-            raise ValueError("better_planes: `props` must be a `min` or `max` or `avg` or `add` or `sub`")
+            raise ValueError("better_planes: `props` must be a {}".format('`' + '` or `'.join(list(allowed_props.keys()))) + '`')
     elif isinstance(props, list):
         up_t = len(props)
         props_ = []
@@ -742,13 +771,17 @@ def better_planes(clips: List[vs.VideoNode], props: str = "avg", show_info: bool
             if i in allowed_props:
                 props_.append(allowed_props[i.lower()])
             else:
-                raise ValueError("better_planes: `props[{}]` must be a `min` or `max` or `avg` or `add` or `sub``".format(n))
+                raise ValueError("better_planes: `props[{}]` must be a {}".format(n, '`' + '` or `'.join(list(allowed_props.keys()))) + '`')
     else:
         raise ValueError("better_planes: props must be a string or a list")
 
     clips1_ = []
     clips2_ = []
     clips3_ = []
+    props_copy_ = []
+    if 'numpy' in sys.modules:
+        props_copy_.extend(props_)
+        props_ = [n.__name__ for n in props_]
     if isinstance(show_info, list):
         for n, clip in enumerate(clips):
             clips1_.append(core.text.Text(core.std.ShufflePlanes(clip, 0, vs.GRAY), "{} - Y ({})".format(show_info[n], props_[0]), 7))
@@ -765,6 +798,14 @@ def better_planes(clips: List[vs.VideoNode], props: str = "avg", show_info: bool
             clips2_.append(core.std.ShufflePlanes(clip, 1, vs.GRAY))
             clips3_.append(core.std.ShufflePlanes(clip, 2, vs.GRAY))
 
+    if 'numpy' in sys.modules:
+        props_ = props_copy_
+        y_val = core.std.FrameEval(clips1_[0], partial(select_best2, clist=clips1_, fun=props_[0]))
+        u_val = core.std.FrameEval(clips2_[0], partial(select_best2, clist=clips2_, fun=props_[1]))
+        v_val = core.std.FrameEval(clips3_[0], partial(select_best2, clist=clips3_, fun=props_[2]))
+
+        return core.std.ShufflePlanes([y_val, u_val, v_val], [0], vs.YUV)
+
     _clips_prop1 = []
     _clips_prop2 = []
     _clips_prop3 = []
@@ -775,14 +816,16 @@ def better_planes(clips: List[vs.VideoNode], props: str = "avg", show_info: bool
     for clip in clips3_:
         _clips_prop3.append(clip.std.PlaneStats(plane=0))
 
+
     y_val = core.std.FrameEval(clips1_[0], partial(select_best, clist=clips1_, pd=props_[0]), prop_src=_clips_prop1)
     u_val = core.std.FrameEval(clips2_[0], partial(select_best, clist=clips2_, pd=props_[1]), prop_src=_clips_prop2)
     v_val = core.std.FrameEval(clips3_[0], partial(select_best, clist=clips3_, pd=props_[2]), prop_src=_clips_prop3)
 
     return core.std.ShufflePlanes([y_val, u_val, v_val], [0], vs.YUV)
 
+
 # TODO: Maybe add chroma support or something
-def better_frame(clips: List[vs.VideoNode], props: str = "avg", show_info: bool = False):
+def better_frame(clips: List[vs.VideoNode], props: Union[str, list] = "avg", show_info: bool = False):
     """
     A naive function for picking the best frames from a list of video (Basically better_planes without checking chroma plane)
 
@@ -800,6 +843,7 @@ def better_frame(clips: List[vs.VideoNode], props: str = "avg", show_info: bool 
     - For using PlaneStatsMax as comparasion: "max", "maximum", or "planestatsmax"
     - For subtracting PlaneStatsMax with PlaneStatsMin as comparasion: "sub" or "subtract"
     - For combining value of PlaneStatsMax with PlaneStatsMin as comparasion: "add" or "addition"
+    - NEW: If you have numpy installed, you can only use "max" or "min"
 
     `show_info` are just showing what input will be used
     if it's True (bool) it will show it.
@@ -817,32 +861,47 @@ def better_frame(clips: List[vs.VideoNode], props: str = "avg", show_info: bool 
     src = nao.better_frame(clips=[src1, src2], props="max")
     """
 
-    allowed_props = {
-        "avg": "PlaneStatsAverage",
-        "min": "PlaneStatsMin",
-        "max": "PlaneStatsMax",
-        "average": "PlaneStatsAverage",
-        "minimum": "PlaneStatsMin",
-        "maximum": "PlaneStatsMax",
-        "planestatsaverage": "PlaneStatsAverage",
-        "planestatsmin": "PlaneStatsMin",
-        "planestatsmax": "PlaneStatsMax",
-        "add": "BothAdd",
-        "sub": "BothSubtract",
-        "addition": "BothAdd",
-        "subtract": "BothSubtract"
-    }
+    if 'numpy' in sys.modules:
+        if isinstance(props, str):
+            if props == "avg":
+                props = "max"
+        allowed_props = {
+            "min": min,
+            "max": max,
+            "minimum": min,
+            "maximum": max
+        }
+    else:
+        allowed_props = {
+            "avg": "PlaneStatsAverage",
+            "min": "PlaneStatsMin",
+            "max": "PlaneStatsMax",
+            "average": "PlaneStatsAverage",
+            "minimum": "PlaneStatsMin",
+            "maximum": "PlaneStatsMax",
+            "planestatsaverage": "PlaneStatsAverage",
+            "planestatsmin": "PlaneStatsMin",
+            "planestatsmax": "PlaneStatsMax",
+            "add": "BothAdd",
+            "sub": "BothSubtract",
+            "addition": "BothAdd",
+            "subtract": "BothSubtract"
+        }
 
     if isinstance(props, str):
         props = props.lower()
         if props in allowed_props:
             props_ = allowed_props[props]
         else:
-            raise ValueError("better_frame: `props` must be a `min` or `max` or `avg` or `add` or `sub`")
+            raise ValueError("better_frame: `props` must be a {}".format('`' + '` or `'.join(list(allowed_props.keys()))) + '`')
     else:
         raise ValueError("better_frame: props must be a string")
 
     clips_ = []
+    props_copy_ = None
+    if 'numpy' in sys.modules:
+        props_copy_ = props_
+        props_ = props_.__name__
     if isinstance(show_info, list):
         for n, clip in enumerate(clips):
             clips_.append(core.text.Text(clip, "{} - ({})".format(show_info[n], props_), 7))
@@ -853,11 +912,15 @@ def better_frame(clips: List[vs.VideoNode], props: str = "avg", show_info: bool 
         for clip in clips:
             clips_.append(clip)
 
+    if 'numpy' in sys.modules:
+        props_ = props_copy_
+        return core.std.FrameEval(clips_[0], partial(select_best2, clist=clips_, fun=props_))
+
     _clips_prop = []
     for clip in clips_:
         _clips_prop.append(clip.std.PlaneStats(plane=0))
 
-    return core.std.FrameEval(clips_[1], partial(select_best, clist=clips_, pd=props_), prop_src=_clips_prop)
+    return core.std.FrameEval(clips_[0], partial(select_best, clist=clips_, pd=props_), prop_src=_clips_prop)
 
 
 def recursive_apply_mask(src1: vs.VideoNode, src2: vs.VideoNode, mask_folder: str):
