@@ -925,12 +925,17 @@ def better_frame(clips: List[vs.VideoNode], props: Union[str, list] = "avg", sho
 
 def recursive_apply_mask(src1: vs.VideoNode, src2: vs.VideoNode, mask_folder: str):
     """
-    Recursively check `mask_folder` for an .png file
+    Recursively check `mask_folder` for a .png or .ass file
     After it found all of them, it will loop it and apply the mask
 
     Acceptable filename format:
-    frameNum.png
-    Example: 2500.png
+    - frameNum.png
+    - frameStart-frameEnd.png
+    - itsUpToYou.ass
+    Example:
+    - 2500.png
+    - 2000-2004.png
+    - maskep1.ass
 
     :param src1: vapoursynth.VideoNode: A VideoNode clip (Format must be the same as src2)
     :param src2: vapoursynth.VideoNode: A VideoNode clip (Format must be the same as src1)
@@ -941,9 +946,11 @@ def recursive_apply_mask(src1: vs.VideoNode, src2: vs.VideoNode, mask_folder: st
     import os
     import glob
 
+    mask_folder = mask_folder.rstrip('/').rstrip('\\')
+
     imwri = core.imwri
-    masks = glob.glob(mask_folder.rstrip('/').rstrip('\\') + '/*.png')
-    for mask in masks:
+    masks_png = glob.glob(mask_folder + '/*.png')
+    for mask in masks_png:
         im = fvf.Depth(
             imwri.Read(mask).resize.Point(
                 format=vs.GRAYS,
@@ -956,11 +963,27 @@ def recursive_apply_mask(src1: vs.VideoNode, src2: vs.VideoNode, mask_folder: st
                 fpsnum=src1.fps.numerator, fpsden=src1.fps.denominator
             )
 
-        frame = int(os.path.splitext(os.path.basename(mask))[0])
-        src1_n, src2_n = src1[frame], src2[frame]
+        frame = os.path.splitext(os.path.basename(mask))[0]
+        frame = [int(i) for i in frame.split('-')][:2]
+        if len(frame) < 2:
+            frame = [frame[0], frame[0]]
+        fs, fe = frame
+        src1_n, src2_n = src1[fs:fe+1], src2[fs:fe+1]
+
+        im = im * ((fe+1) - fs)
 
         src_masked = core.std.MaskedMerge(src1_n, src2_n, im)
-        src1 = insert_clip(src1, src_masked, frame)
+        src1 = insert_clip(src1, src_masked, fs)
+
+    masks_ass = glob.glob(mask_folder + '/*.ass')
+    for mask in masks_ass:
+        blank_mask = src1.std.BlankClip()
+        ass_mask = get_y(blank_mask.sub.TextFile(mask)).std.BoxBlur(
+            hradius=3,
+            vradius=3
+        )
+
+        src1 = core.std.MaskedMerge(src1, src2, ass_mask)
 
     return src1
 
@@ -979,3 +1002,4 @@ check_diff = partial(save_difference, check_only=True)
 sfr = SimpleFrameReplace
 bplanes = better_planes
 bframe = better_frame
+rapplym = recursive_apply_mask
