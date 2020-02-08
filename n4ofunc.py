@@ -90,20 +90,44 @@ def save_difference(src1: vs.VideoNode, src2: vs.VideoNode, threshold: float = 0
     import os
     import shutil
 
+    def _pad_video(src_a: vs.VideoNode, src_b: vs.VideoNode) -> tuple:
+        """
+        Pad video that doesn't have same frames total
+        Video that are padded are the one that have less frames total
+
+        :param src_a: vapoursynth.VideoNode: Video source A/1
+        :param src_b: vapoursynth.VideoNode: Video source B/2
+        :return: List[vapoursynth.VideoNode, vapoursynth.VideoNode]: Padded video
+        """
+        src_af = src_a.num_frames
+        src_bf = src_b.num_frames
+
+        if src_af > src_bf:
+            src_add = src_af - src_bf
+            src_b = src_b + (src_b[-1] * src_add)
+        if src_bf > src_af:
+            src_add = src_bf - src_af
+            src_a = src_a + (src_a[-1] * src_add)
+        return src_a, src_b
+
+    if not hasattr(sys, "argv"): # Simple check if script are opened via VSEdit
+        raise Exception("save_difference: please run this vpy script via command-line (Ex: python ./script.vpy)")
+
+    print('[@] save_difference: Starting process')
     src1_cf = src1.format.color_family
     src2_cf = src2.format.color_family
     src1_bits = src1.format.bits_per_sample
     src2_bits = src2.format.bits_per_sample
 
     if src1.num_frames != src2.num_frames:
-        raise ValueError('save_difference: src1 and src2 total frames are not the same')
+        print('[@] save_difference: padding video... ({} vs {})'.format(src1.num_frames, src2.num_frames))
+        src1, src2 = _pad_video(src1, src2)
     if len(output_fn) < 2:
         raise ValueError('save_difference: `output_fn` need a minimum of 2 name')
     out_fn1, out_fn2 = output_fn[:2]
 
     cwd = os.getcwd()
     dirsave = cwd + '\\frame_difference'
-    print('[@] save_difference: Starting process')
 
     if not os.path.isdir(dirsave) and not check_only:
         os.mkdir(dirsave)
@@ -122,6 +146,7 @@ def save_difference(src1: vs.VideoNode, src2: vs.VideoNode, threshold: float = 0
     src2_gray = src2.std.ShufflePlanes(0, vs.GRAY)
 
     n = 0
+    last_known_diff = -1
     dataset = dict()
     try:
         for i, f in enumerate(core.std.PlaneStats(src1_gray, src2_gray).frames()):
@@ -129,25 +154,30 @@ def save_difference(src1: vs.VideoNode, src2: vs.VideoNode, threshold: float = 0
                                                                             f.props["PlaneStatsDiff"]), end='\r')
             if f.props["PlaneStatsDiff"] >= threshold:
                 if check_only:
-                    print('', end='\n')
-                    print('[@] save_difference: Difference detected: Frame {}'.format(i))
-                    print('', end='\n')
+                    if last_known_diff != i: # so it doesn't spam the user
+                        print('', end='\n')
+                        print('[@] save_difference: Difference detected: Frame {}'.format(i))
+                        print('', end='\n')
+                        n += 1
                 else:
-                    dataset['{n}_{fn}'.format(n=i, fn=out_fn1)] = [src1[i], i, f.props['PlaneStatsDiff']]
-                    dataset['{n}_{fn}'.format(n=i, fn=out_fn2)] = [src2[i], i, f.props['PlaneStatsDiff']]
-                n += 1
+                    if last_known_diff != i:
+                        dataset['{n}_{fn}'.format(n=i, fn=out_fn1)] = [src1[i], i, f.props['PlaneStatsDiff']]
+                        dataset['{n}_{fn}'.format(n=i, fn=out_fn2)] = [src2[i], i, f.props['PlaneStatsDiff']]
+                        n += 1
+                last_known_diff = i + 1
         print('', end='\n')
     except KeyboardInterrupt:
         print('', end='\n')
-        print('[!!] CTRL+C Pressed, halting frame processing...')
+        print('[!!] Process interrupted, halting frame processing...')
+        exit(1)
     if n == 0:
-        print('[@] save_difference: no significant difference found with current threshold.')
+        print('[@] save_difference: no significant difference found with current threshold. (thresh: {})'.format(threshold))
         if not check_only:
             shutil.rmtree(dirsave)
-        return
+        exit(0)
 
     if check_only:
-        return
+        exit(0)
 
     print('[@] save_difference: Saving image...')
     print('[#] Total found: {}'.format(n))
