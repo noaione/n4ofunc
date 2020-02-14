@@ -508,7 +508,7 @@ def source(src: vs.VideoNode, lsmas: bool = False, depth: Optional[int] = False,
         first, last = parse_trim_data(trims, src)
         src = core.std.Trim(src, first, last)
     if crop_l or crop_r or crop_b or crop_t:
-        return core.std.Crop(src, crop_l, crop_r, crop_t, crop_r)
+        return core.std.Crop(src, crop_l, crop_r, crop_t, crop_b)
     return src
 
 
