@@ -312,7 +312,8 @@ def antiedgemask(src: vs.VideoNode, iteration: int = 1) -> vs.VideoNode:
 
 
 def simple_native_mask(clip: vs.VideoNode, descale_w: IntegerFloat, descale_h: IntegerFloat,
-                       blurh: IntegerFloat = 1.5, blurv: IntegerFloat = 1.5, iter_max: int = 3) -> vs.VideoNode:
+                       blurh: IntegerFloat = 1.5, blurv: IntegerFloat = 1.5, iter_max: int = 3,
+                       no_resize: bool = False) -> vs.VideoNode:
     """
     A native mask that make sure native content doesn't get descaled
 
@@ -335,8 +336,12 @@ def simple_native_mask(clip: vs.VideoNode, descale_w: IntegerFloat, descale_h: I
     down = core.descale.Debicubic(y_32, descale_w, descale_h)
     up = core.resize.Bicubic(down, target_w, target_h)
     dmask = core.std.Expr([y_32, up], 'x y - abs 0.025 > 1 0 ?')
-    dmask = iterate(dmask, core.std.Maximum, iter_max).std.BoxBlur(hradius=blurh, vradius=blurv)
-    return core.resize.Bicubic(dmask, descale_w, descale_h).fmtc.bitdepth(bits=clip_bits)
+    dmask = iterate(dmask, core.std.Maximum, iter_max)
+    if blurh > 0 and blurv > 0:
+        dmask = core.std.BoxBlur(hradius=blurh, vradius=blurv)
+    if not no_resize:
+        dmask = core.resize.Bicubic(dmask, descale_w, descale_h)
+    return dmask.fmtc.bitdepth(bits=clip_bits)
 
 
 def masked_descale(src: vs.VideoNode, target_w: IntegerFloat, target_h: IntegerFloat, kernel: str = 'bicubic',
