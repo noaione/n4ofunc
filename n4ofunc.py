@@ -324,6 +324,7 @@ def simple_native_mask(clip: vs.VideoNode, descale_w: IntegerFloat, descale_h: I
     :param blurh: float: Horizontal blur strength
     :param blurv: float: Horizontal blur strength
     :param iter_max: int: Mask iteration that will expand the mask
+    :param no_resize: bool: don't resize to the descaled resolution (keep it at original resolution)
 
     :return: vapoursynth.VideoNode
     """
@@ -339,7 +340,7 @@ def simple_native_mask(clip: vs.VideoNode, descale_w: IntegerFloat, descale_h: I
     dmask = core.std.Expr([y_32, up], 'x y - abs 0.025 > 1 0 ?')
     dmask = iterate(dmask, core.std.Maximum, iter_max)
     if blurh > 0 and blurv > 0:
-        dmask = core.std.BoxBlur(hradius=blurh, vradius=blurv)
+        dmask = core.std.BoxBlur(dmask, hradius=blurh, vradius=blurv)
     if not no_resize:
         dmask = core.resize.Bicubic(dmask, descale_w, descale_h)
     return dmask.fmtc.bitdepth(bits=clip_bits)
