@@ -16,8 +16,13 @@ A simple function collection that I used
 2. adaptive_scaling
 3. better_frame
 4. better_planes
-5. masked_descale
-6. recursive_apply_mask
-7. save_difference
-8. SimpleFrameReplace
-9. source
+5. compare
+6. masked_descale
+7. recursive_apply_mask
+8. save_difference
+9. SimpleFrameReplace
+10. source
+
+More information about every function will be posted on my own personal blog.
+
+*Licensed with MIT License*

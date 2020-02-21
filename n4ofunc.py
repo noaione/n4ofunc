@@ -26,6 +26,7 @@ Main Function:
     adaptive_scaling
     better_frame
     better_planes
+    compare
     masked_descale
     recursive_apply_mask
     save_difference
