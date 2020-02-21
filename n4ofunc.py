@@ -362,7 +362,7 @@ def masked_descale(src: vs.VideoNode, target_w: IntegerFloat, target_h: IntegerF
     :param masked: bool: Use mask for descaling, to make sure "native" content are not descaled but downscaled
     :param show_mask: bool: Show mask that are used.
 
-    :return: vapoursynth.VideoNode.format
+    :return: vapoursynth.VideoNode
     """
     if not src:
         raise ValueError('src cannot be empty')
@@ -465,7 +465,7 @@ def source(src: vs.VideoNode, lsmas: bool = False, depth: Optional[int] = False,
     :param trims: list: Trim video (Integer + List type)
     :param dither_yuv: bool: Dither Image or Video to YUV subsample
 
-    :return: vapoursynth.VideoNode.format
+    :return: vapoursynth.VideoNode
     """
     def parse_trim_data(trim_data, video):
         if len(trim_data) < 2:
@@ -1023,7 +1023,7 @@ def recursive_apply_mask(src1: vs.VideoNode, src2: vs.VideoNode, mask_folder: st
     return src1
 
 
-def compare(clips: list, identity: bool, height: int,
+def compare(clips: list, height: Union[None, int] = None, identity: bool = False,
             max_vertical_stack: int = 2, interleave_only: bool = False) -> vs.VideoNode:
     """
     Stack compare clips
@@ -1040,12 +1040,13 @@ def compare(clips: list, identity: bool, height: int,
 
     :param clips: list: A list of clip/VideoNode
     :param height: int: Final clip height (interleave_only will ignore this)
+                        Default to None if you don't want to set it
     :param max_vertical_stack: int: A maximum vertical stack (default is 2)
     :param identity: bool: Give numbering to clips (core.text.Text)
     :param interleave_only: Use interleaving instead of stacking
 
     :return: a stacked/interleaved clip
-    :rtype: Vapoursynth.VideoNode
+    :rtype: vapoursynth.VideoNode
     """
     if len(clips) < 2:
         raise ValueError('n4ofunc.compare: please provide 2 or more clips.')
@@ -1072,11 +1073,12 @@ def compare(clips: list, identity: bool, height: int,
         for index, clip in enumerate(clips):
             if clip.format.num_planes == 1:
                 only_use_luma = True
-            modified_clip.append(clip.std.Text("Clip: {}".format(str_[index])))
+            modified_clip.append(clip.text.Text("Clip: {}".format(str_[index])))
     else:
         for index, clip in enumerate(clips, 1):
             if clip.format.num_planes == 1:
                 only_use_luma = True
+            modified_clip.append(clip)
 
     for index, mod_clip in enumerate(modified_clip):
         if only_use_luma:
@@ -1092,12 +1094,18 @@ def compare(clips: list, identity: bool, height: int,
 
     modified_clip = [
         core.std.StackVertical(
-            lst[i:i + max_vertical_stack]
+            modified_clip[i:i + max_vertical_stack]
         ) for i in range(
             0, len(modified_clip), max_vertical_stack
         )
     ]
-    return core.std.StackHorizontal(modified_clip)
+    final_clip = core.std.StackHorizontal(modified_clip)
+    if height:
+        ar = final_clip.width / final_clip.height
+        final_clip = core.std.Bicubic(
+            final_clip, get_w(height, ar, True), height
+        )
+    return final_clip
 
 
 src = source
