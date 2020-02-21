@@ -1038,7 +1038,7 @@ def compare(clips: list, height: Union[None, int] = None, identity: bool = False
     If one of the clips only have `Y` plane, all other clips will be changed to use only 1 plane
     The total vertical clips can be modified using `max_vertical_stack`
 
-    :param clips: list: A list of clip/VideoNode
+    :param clips: list: A list of clip/VideoNode (support infinite amount of clips or until it crashed.)
     :param height: int: Final clip height (interleave_only will ignore this)
                         Default to None if you don't want to set it
     :param max_vertical_stack: int: A maximum vertical stack (default is 2)
@@ -1082,9 +1082,9 @@ def compare(clips: list, height: Union[None, int] = None, identity: bool = False
                 only_use_luma = True
             modified_clip.append(clip)
 
-    for index, mod_clip in enumerate(modified_clip):
-        if only_use_luma:
-            if clip.format.num_planes > 1:
+    if only_use_luma:
+        for index, mod_clip in enumerate(modified_clip):
+            if clip.format.num_planes != 1:
                 modified_clip[index] = get_y(mod_clip)
 
     # Find needed clip for current max_vertical_stack.
@@ -1094,6 +1094,9 @@ def compare(clips: list, height: Union[None, int] = None, identity: bool = False
             core.std.BlankClip(modified_clip[0]).text.Text('BlankClip Pad')
         )
 
+    # Split into chunks of max_vertical_stack and StackVertical it.
+    # Input: [A, B, C, D, E, F, G, H]
+    # Output: [[A, B], [C, D], [E, F], [G, H]]
     modified_clip = [
         core.std.StackVertical(
             modified_clip[i:i + max_vertical_stack]
