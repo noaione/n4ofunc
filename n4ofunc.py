@@ -1028,6 +1028,7 @@ def compare(clips: list, height: Union[None, int] = None, identity: bool = False
             max_vertical_stack: int = 2, interleave_only: bool = False) -> vs.VideoNode:
     """
     Stack compare clips
+    Probably inspired by LightArrowsEXE `stack_compare` function.
     Clips are stacked like this:
     -------------
     | A | C | E |
@@ -1111,10 +1112,11 @@ def compare(clips: list, height: Union[None, int] = None, identity: bool = False
     else:
         final_clip = modified_clip[0]
     if height:
-        ar = final_clip.width / final_clip.height
-        final_clip = core.std.Bicubic(
-            final_clip, get_w(height, ar, True), height
-        )
+        if height != final_clip.height: # Ignore
+            ar = final_clip.width / final_clip.height
+            final_clip = core.resize.Bicubic(
+                final_clip, get_w(height, ar, True), height
+            )
     return final_clip
 
 
