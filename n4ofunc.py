@@ -1023,6 +1023,83 @@ def recursive_apply_mask(src1: vs.VideoNode, src2: vs.VideoNode, mask_folder: st
     return src1
 
 
+def compare(clips: list, identity: bool, height: int,
+            max_vertical_stack: int = 2, interleave_only: bool = False) -> vs.VideoNode:
+    """
+    Stack compare clips
+    Clips are stacked like this:
+    -------------
+    | A | C | E |
+    -------------
+    | B | D | F |
+    ------------- -- (For max_vertical_stack = 2)
+    etc...
+    If clips total are not even, it add an extra BlankClip
+    If one of the clips only have `Y` plane, all other clips will be changed to use only 1 plane
+    The total vertical clips can be modified using `max_vertical_stack`
+
+    :param clips: list: A list of clip/VideoNode
+    :param height: int: Final clip height (interleave_only will ignore this)
+    :param max_vertical_stack: int: A maximum vertical stack (default is 2)
+    :param identity: bool: Give numbering to clips (core.text.Text)
+    :param interleave_only: Use interleaving instead of stacking
+
+    :return: a stacked/interleaved clip
+    :rtype: Vapoursynth.VideoNode
+    """
+    if len(clips) < 2:
+        raise ValueError('n4ofunc.compare: please provide 2 or more clips.')
+    if interleave_only:
+        return core.std.Interleave(clips, mismatch=True)
+
+    str_ = "ABCDEFGHIJKLMNOPQRSTUVWXYZ123456789abcefghijklmnopqrstuvwxyz"
+
+    def _calculate_needed_clip(max_vert: int, clip_total: int) -> int:
+        multiples_of = list(range(max_vert, (clip_total + 1) * max_vert, max_vert))
+        multiples_of_total = len(multiples_of)
+        max_needed = None
+        for i in range(multiples_of_total):
+            if i + 1 == multiples_of_total - 1:
+                break
+            if multiples_of[i] <= clip_total <= multiples_of[i + 1]:
+                max_needed = multiples_of[i + 1]
+                break
+        return max_needed
+
+    modified_clip = []
+    only_use_luma = False
+    if identity:
+        for index, clip in enumerate(clips):
+            if clip.format.num_planes == 1:
+                only_use_luma = True
+            modified_clip.append(clip.std.Text("Clip: {}".format(str_[index])))
+    else:
+        for index, clip in enumerate(clips, 1):
+            if clip.format.num_planes == 1:
+                only_use_luma = True
+
+    for index, mod_clip in enumerate(modified_clip):
+        if only_use_luma:
+            if clip.format.num_planes > 1:
+                modified_clip[index] = get_y(mod_clip)
+
+    # Find needed clip for current max_vertical_stack.
+    needed_clip = _calculate_needed_clip(max_vertical_stack, len(modified_clip))
+    for _ in range(needed_clip - len(modified_clip)):
+        modified_clip.append(
+            core.std.BlankClip(modified_clip[0]).text.Text('BlankClip Pad')
+        )
+
+    modified_clip = [
+        core.std.StackVertical(
+            lst[i:i + max_vertical_stack]
+        ) for i in range(
+            0, len(modified_clip), max_vertical_stack
+        )
+    ]
+    return core.std.StackHorizontal(modified_clip)
+
+
 src = source
 descale = masked_descale
 antiedge = antiedgemask
