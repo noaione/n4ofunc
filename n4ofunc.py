@@ -192,6 +192,9 @@ def save_difference(src1: vs.VideoNode, src2: vs.VideoNode, threshold: float = 0
         print('[!!] CTRL+C Pressed, stopping...')
 
 
+check_diff = partial(save_difference, check_only=True)
+
+
 def adaptive_degrain2(src: vs.VideoNode, luma_scaling: int = 30, kernel: str = 'smdegrain',
                       area: str = 'light', iter_edge: int = 0, show_mask: bool = False, **degrain_args):
     """
@@ -289,6 +292,14 @@ def adaptive_degrain2(src: vs.VideoNode, luma_scaling: int = 30, kernel: str = '
     fil = degrainfuncs[kernel](src)
 
     return core.std.MaskedMerge(src, fil, mask)
+
+
+# Aliases
+adaptive_bm3d = partial(adaptive_degrain2, kernel='bm3d')
+adaptive_dfttest = partial(adaptive_degrain2, kernel='dfttest')
+adaptive_knlm = partial(adaptive_degrain2, kernel='knlm')
+adaptive_tnlm = partial(adaptive_degrain2, kernel='tnlm')
+adaptive_smdegrain = partial(adaptive_degrain2, kernel='smd')
 
 
 def antiedgemask(src: vs.VideoNode, iteration: int = 1) -> vs.VideoNode:
@@ -663,6 +674,10 @@ def adaptive_scaling(clip: vs.VideoNode, target_w: Optional[IntegerFloat] = None
     merged = core.std.MaskedMerge(y, y_deb, mask)
     merged = core.std.ShufflePlanes([merged, clip32], [0, 1, 2], vs.YUV)
     return fvf.Depth(merged, ref_d)
+
+# Aliases
+adaptive_rescale = partial(adaptive_scaling, rescale=True)
+adaptive_descale = partial(adaptive_scaling, rescale=False)
 
 
 def SimpleFrameReplace(src: vs.VideoNode, src_frame: int, target_frame: str) -> vs.VideoNode:
@@ -1052,6 +1067,21 @@ def compare(clips: list, height: Union[None, int] = None, identity: bool = False
     only_use_luma = False
     if len(clips) < 2:
         raise ValueError('n4ofunc.compare: please provide 2 or more clips.')
+
+    def _fallback_str(a):
+        try:
+            f = str_[a]
+        except:
+            f = 'U{}'.format(a + 1)
+        return f
+
+    def _generate_ident(clip_index, src_w, src_h):
+        gen = r"{\an7\b1\bord5\c&H00FFFF\pos"
+        gen += "({w}, {h})".format(w=25 * (src_w / 1920), h=25 * (src_h / 1080))
+        gen += r"\fs" + "{0}".format(60 * (src_h / 1080)) + r"}"
+        gen += "Clip {0}".format(_fallback_str(clip_index))
+        return gen
+
     if interleave_only:
         # Check for luma only clip
         for index, clip, in enumerate(clips):
@@ -1061,11 +1091,9 @@ def compare(clips: list, height: Union[None, int] = None, identity: bool = False
 
         # Set YUV video to Y video if only_use_luma.
         if only_use_luma:
-            for index, clip in enumerate(clips):
-                if clip.format.num_planes != 1:
-                    clips[index] = get_y(clip)
+            clips = [get_y(clip) for clip in clips]
         # Set identity.
-        clips = [core.text.Text(clip, "Clip: {}".format(str_[index])) for index, clip in enumerate(clips)]
+        clips = [clip.sub.Subtitle(_generate_ident(ind, clip.width, clip.height)) for ind, clip in enumerate(clips)]
         return core.std.Interleave(clips, mismatch=False)
 
     def _calculate_needed_clip(max_vert: int, clip_total: int) -> int:
@@ -1080,29 +1108,29 @@ def compare(clips: list, height: Union[None, int] = None, identity: bool = False
                 break
         return max_needed
 
-    modified_clip = []
-    if identity:
-        for index, clip in enumerate(clips):
-            if clip.format.num_planes == 1:
-                only_use_luma = True
-            modified_clip.append(clip.text.Text("Clip: {}".format(str_[index])))
-    else:
-        for index, clip in enumerate(clips, 1):
-            if clip.format.num_planes == 1:
-                only_use_luma = True
-            modified_clip.append(clip)
+    for index, clip in enumerate(clips, 1):
+        if clip.format.num_planes == 1:
+            only_use_luma = True
+            break
 
     if only_use_luma:
-        for index, mod_clip in enumerate(modified_clip):
-            if clip.format.num_planes != 1:
-                modified_clip[index] = get_y(mod_clip)
+        modified_clip = [get_y(clip) for clip in clips]
+    else:
+        modified_clip = clips
+
+    if identity:
+        modified_clip = [clip.sub.Subtitle(_generate_ident(ind, clip.width, clip.height)) for ind, clip in enumerate(modified_clip)]
 
     # Find needed clip for current max_vertical_stack.
     if len(modified_clip) != max_vertical_stack:
         needed_clip = _calculate_needed_clip(max_vertical_stack, len(modified_clip))
         for _ in range(needed_clip - len(modified_clip)):
             modified_clip.append(
-                core.std.BlankClip(modified_clip[0]).text.Text('BlankClip Pad')
+                core.std.BlankClip(modified_clip[0]).sub.Subtitle(
+                    r"{\an5\fs120\b1\pos(" + "{},{}".format(
+                        modified_clip[0].width / 2, modified_clip[0].height / 2
+                    ) + r")}BlankClip Pad\N(Ignore)"
+                )
             )
 
     # Split into chunks of max_vertical_stack and StackVertical it.
@@ -1115,10 +1143,7 @@ def compare(clips: list, height: Union[None, int] = None, identity: bool = False
             0, len(modified_clip), max_vertical_stack
         )
     ]
-    if len(modified_clip) != max_vertical_stack:
-        final_clip = core.std.StackHorizontal(modified_clip)
-    else:
-        final_clip = modified_clip[0]
+    final_clip = core.std.StackHorizontal(modified_clip) if len(modified_clip) > 1 else modified_clip[0]
     if height:
         if height != final_clip.height: # Ignore
             ar = final_clip.width / final_clip.height
@@ -1131,14 +1156,6 @@ def compare(clips: list, height: Union[None, int] = None, identity: bool = False
 src = source
 descale = masked_descale
 antiedge = antiedgemask
-adaptive_bm3d = partial(adaptive_degrain2, kernel='bm3d')
-adaptive_dfttest = partial(adaptive_degrain2, kernel='dfttest')
-adaptive_knlm = partial(adaptive_degrain2, kernel='knlm')
-adaptive_tnlm = partial(adaptive_degrain2, kernel='tnlm')
-adaptive_smdegrain = partial(adaptive_degrain2, kernel='smd')
-adaptive_rescale = partial(adaptive_scaling, rescale=True)
-adaptive_descale = partial(adaptive_scaling, rescale=False)
-check_diff = partial(save_difference, check_only=True)
 sfr = SimpleFrameReplace
 bplanes = better_planes
 bframe = better_frame
