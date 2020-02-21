@@ -1088,11 +1088,12 @@ def compare(clips: list, height: Union[None, int] = None, identity: bool = False
                 modified_clip[index] = get_y(mod_clip)
 
     # Find needed clip for current max_vertical_stack.
-    needed_clip = _calculate_needed_clip(max_vertical_stack, len(modified_clip))
-    for _ in range(needed_clip - len(modified_clip)):
-        modified_clip.append(
-            core.std.BlankClip(modified_clip[0]).text.Text('BlankClip Pad')
-        )
+    if len(modified_clip) != max_vertical_stack:
+        needed_clip = _calculate_needed_clip(max_vertical_stack, len(modified_clip))
+        for _ in range(needed_clip - len(modified_clip)):
+            modified_clip.append(
+                core.std.BlankClip(modified_clip[0]).text.Text('BlankClip Pad')
+            )
 
     # Split into chunks of max_vertical_stack and StackVertical it.
     # Input: [A, B, C, D, E, F, G, H]
@@ -1104,7 +1105,10 @@ def compare(clips: list, height: Union[None, int] = None, identity: bool = False
             0, len(modified_clip), max_vertical_stack
         )
     ]
-    final_clip = core.std.StackHorizontal(modified_clip)
+    if len(modified_clip) != max_vertical_stack:
+        final_clip = core.std.StackHorizontal(modified_clip)
+    else:
+        final_clip = modified_clip[0]
     if height:
         ar = final_clip.width / final_clip.height
         final_clip = core.std.Bicubic(
