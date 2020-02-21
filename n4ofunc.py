@@ -1052,12 +1052,24 @@ def compare(clips: list, height: Union[None, int] = None, identity: bool = False
     :rtype: vapoursynth.VideoNode
     """
     str_ = "ABCDEFGHIJKLMNOPQRSTUVWXYZ123456789abcefghijklmnopqrstuvwxyz"
+    only_use_luma = False
     if len(clips) < 2:
         raise ValueError('n4ofunc.compare: please provide 2 or more clips.')
     if interleave_only:
+        # Check for luma only clip
+        for index, clip, in enumerate(clips):
+            if clip.format.num_planes == 1:
+                only_use_luma = True
+                break
+
+        # Set YUV video to Y video if only_use_luma.
+        if only_use_luma:
+            for index, clip in enumerate(clips):
+                if clip.format.num_planes != 1:
+                    clips[index] = get_y(clip)
         # Set identity.
         clips = [core.text.Text(clip, "Clip: {}".format(str_[index])) for index, clip in enumerate(clips)]
-        return core.std.Interleave(clips, mismatch=True)
+        return core.std.Interleave(clips, mismatch=False)
 
     def _calculate_needed_clip(max_vert: int, clip_total: int) -> int:
         multiples_of = list(range(max_vert, (clip_total + 1) * max_vert, max_vert))
@@ -1072,7 +1084,6 @@ def compare(clips: list, height: Union[None, int] = None, identity: bool = False
         return max_needed
 
     modified_clip = []
-    only_use_luma = False
     if identity:
         for index, clip in enumerate(clips):
             if clip.format.num_planes == 1:
