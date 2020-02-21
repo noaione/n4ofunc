@@ -1043,17 +1043,19 @@ def compare(clips: list, height: Union[None, int] = None, identity: bool = False
                         Default to None if you don't want to set it
     :param max_vertical_stack: int: A maximum vertical stack (default is 2)
     :param identity: bool: Give numbering to clips (core.text.Text)
+                           This will be ignored if it's set False if interleave_only is True
     :param interleave_only: Use interleaving instead of stacking
 
     :return: a stacked/interleaved clip
     :rtype: vapoursynth.VideoNode
     """
+    str_ = "ABCDEFGHIJKLMNOPQRSTUVWXYZ123456789abcefghijklmnopqrstuvwxyz"
     if len(clips) < 2:
         raise ValueError('n4ofunc.compare: please provide 2 or more clips.')
     if interleave_only:
+        # Set identity.
+        clips = [core.text.Text(clip, "Clip: {}".format(str_[index])) for index, clip in enumerate(clips)]
         return core.std.Interleave(clips, mismatch=True)
-
-    str_ = "ABCDEFGHIJKLMNOPQRSTUVWXYZ123456789abcefghijklmnopqrstuvwxyz"
 
     def _calculate_needed_clip(max_vert: int, clip_total: int) -> int:
         multiples_of = list(range(max_vert, (clip_total + 1) * max_vert, max_vert))
