@@ -960,7 +960,7 @@ def better_frame(clips: List[vs.VideoNode], props: Union[str, list] = "avg", sho
     return core.std.FrameEval(clips_[0], partial(select_best, clist=clips_, pd=props_), prop_src=_clips_prop)
 
 
-def recursive_apply_mask(src1: vs.VideoNode, src2: vs.VideoNode, mask_folder: str):
+def recursive_apply_mask(src1: vs.VideoNode, src2: vs.VideoNode, mask_folder: str, iter: int = 1):
     """
     Recursively check `mask_folder` for a .png or .ass file
     After it found all of them, it will loop it and apply the mask
@@ -977,6 +977,7 @@ def recursive_apply_mask(src1: vs.VideoNode, src2: vs.VideoNode, mask_folder: st
     :param src1: vapoursynth.VideoNode: A VideoNode clip (Format must be the same as src2)
     :param src2: vapoursynth.VideoNode: A VideoNode clip (Format must be the same as src1)
     :param mask_folder: str: A folder path that contains the masks
+    :param iter: int: iterate how much the mask will be masked
 
     :return: vapoursynth.VideoNode
     """
@@ -990,13 +991,9 @@ def recursive_apply_mask(src1: vs.VideoNode, src2: vs.VideoNode, mask_folder: st
     for mask in masks_png:
         im = fvf.Depth(
             imwri.Read(mask).resize.Point(
-                format=vs.GRAYS,
-                matrix_s='709'
+                format=vs.GRAYS, matrix_s='709'
             ),
-            src1.format.bits_per_sample).std.BoxBlur(
-                hradius=3,
-                vradius=3
-            ).std.AssumeFPS(
+            src1.format.bits_per_sample).std.AssumeFPS(
                 fpsnum=src1.fps.numerator, fpsden=src1.fps.denominator
             )
 
@@ -1008,17 +1005,16 @@ def recursive_apply_mask(src1: vs.VideoNode, src2: vs.VideoNode, mask_folder: st
         src1_n, src2_n = src1[fs:fe+1], src2[fs:fe+1]
 
         im = im * ((fe+1) - fs)
-
+        im = get_y(im)
         src_masked = core.std.MaskedMerge(src1_n, src2_n, im)
+        for _ in range(iter-1):
+            src_masked = core.std.MaskedMerge(src_masked, src2_n, im)
         src1 = insert_clip(src1, src_masked, fs)
 
     masks_ass = glob.glob(mask_folder + '/*.ass')
     for mask in masks_ass:
         blank_mask = src1.std.BlankClip()
-        ass_mask = get_y(blank_mask.sub.TextFile(mask)).std.BoxBlur(
-            hradius=3,
-            vradius=3
-        )
+        ass_mask = get_y(blank_mask.sub.TextFile(mask))
 
         src1 = core.std.MaskedMerge(src1, src2, ass_mask)
 
