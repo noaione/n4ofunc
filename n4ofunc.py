@@ -1404,6 +1404,49 @@ def compare(
     return final_clip
 
 
+def debugclip(clip: vs.VideoNode, extra_info=""):
+    """A helper to show a frame information
+
+    :param clip: VideoNode clip
+    :type clip: vs.VideoNode
+    :param extra_info: What extra info do you want to add after main data, defaults to ""
+    :type extra_info: str, optional
+    """
+    def _calc(i, n, x):
+        return str(i * (n / x))
+
+    extra_info = extra_info.replace(r"\n", r"\N")
+
+    def _generate_style(src_w, src_h, color="00FFFF"):
+        gen = r"{\an7\b1\bord" + _calc(2.25, src_h, 1080) + r"\c&H" + color + r"\pos"
+        gen += "({w}, {h})".format(w=_calc(15, src_w, 1920), h=_calc(10, src_h, 1080))
+        gen += r"\fs" + _calc(24, src_h, 1080) + r"}"
+        return gen
+
+    _main_style = _generate_style(clip.width, clip.height)
+    if extra_info:
+        _extra_style = _generate_style(clip.width, clip.height, "FFFFFF")
+
+    def _add_frame_info(n, f, clip):
+        text_gen = _main_style
+        # Frame
+        text_gen += "Frame {0} of {1}\\N".format(n, clip.num_frames - 1)
+        # PictType
+        text_gen += "Picture type: {0}\\N".format(f.props["_PictType"].decode())
+        text_gen += "Resolution: {0}/{1} ({2})\\N".format(
+            clip.width, clip.height, round(clip.width / clip.height, 4)
+        )  # PictType
+        text_gen += "FPS: {0}/{1} ({2})".format(
+            clip.fps.numerator, clip.fps.denominator, round(clip.fps.numerator / clip.fps.denominator, 3)
+        )  # FPS
+        if extra_info:
+            text_gen += "\\N" + _extra_style + extra_info
+        clip = core.sub.Subtitle(clip, text_gen)
+        return clip[n]
+
+    return core.std.FrameEval(clip, partial(_add_frame_info, clip=clip), prop_src=clip)
+
+
 src = source
 descale = masked_descale
 antiedge = antiedgemask
