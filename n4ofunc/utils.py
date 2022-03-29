@@ -7,7 +7,10 @@ from vapoursynth import core
 if TYPE_CHECKING:
     from vapoursynth import VideoFormat, VideoNode
 
-__all__ = ("is_extension", "register_format",)
+__all__ = (
+    "is_extension",
+    "register_format",
+)
 
 
 def is_extension(filename: str, extension: str) -> bool:

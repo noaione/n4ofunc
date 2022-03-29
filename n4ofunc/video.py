@@ -134,8 +134,8 @@ def SimpleFrameReplace(clip: vs.VideoNode, src_frame: int, target_frame: str):
         raise ValueError("SimpleFrameReplace: `target_frame` last range number are bigger than the first one")
 
     clip_src = clip_src * (frame_range[1] - frame_range[0])
-    pre = clip[:frame_range[0]]
-    post = clip[frame_range[1]:]
+    pre = clip[: frame_range[0]]
+    post = clip[frame_range[1] :]
     return pre + clip_src + post
 
 

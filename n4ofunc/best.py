@@ -34,10 +34,7 @@ PropTypeActual = Literal[
 
 
 def _source_frame_selector(
-    n: int,
-    f: List[vs.VideoFrame],
-    clips: List[vs.VideoNode],
-    prop_type: PropTypeActual
+    n: int, f: List[vs.VideoFrame], clips: List[vs.VideoNode], prop_type: PropTypeActual
 ) -> vs.VideoNode:
     clip_data: List[float] = []
     for p in f:
@@ -112,8 +109,7 @@ def better_planes(
         raise TypeError("better_planes: show_info must be a boolean or list of string")
     if isinstance(show_info, list) and len(show_info) != len(clips):
         raise ValueError(
-            "better_planes: show_info must be a boolean or list of string"
-            "with the same length as clips"
+            "better_planes: show_info must be a boolean or list of string" "with the same length as clips"
         )
 
     allowed_props: Dict[PropType, PropTypeActual] = {
@@ -230,19 +226,13 @@ def better_planes(
         v_clips_prop.append(clip.std.PlaneStats(plane=0))
 
     y_val = core.std.FrameEval(
-        y_clips[0],
-        partial(_source_frame_selector, clips=y_clips, prop_type=props_[0]),
-        prop_src=y_clips_prop
+        y_clips[0], partial(_source_frame_selector, clips=y_clips, prop_type=props_[0]), prop_src=y_clips_prop
     )
     u_val = core.std.FrameEval(
-        u_clips[0],
-        partial(_source_frame_selector, clips=u_clips, prop_type=props_[1]),
-        prop_src=u_clips_prop
+        u_clips[0], partial(_source_frame_selector, clips=u_clips, prop_type=props_[1]), prop_src=u_clips_prop
     )
     v_val = core.std.FrameEval(
-        v_clips[0],
-        partial(_source_frame_selector, clips=v_clips, prop_type=props_[2]),
-        prop_src=v_clips_prop
+        v_clips[0], partial(_source_frame_selector, clips=v_clips, prop_type=props_[2]), prop_src=v_clips_prop
     )
     return core.std.ShufflePlanes([y_val, u_val, v_val], [0, 1, 2], vs.YUV)
 
@@ -311,8 +301,7 @@ def better_frames(
         raise TypeError("better_frames: show_info must be a boolean or list of string")
     if isinstance(show_info, list) and len(show_info) != len(clips):
         raise ValueError(
-            "better_frames: show_info must be a boolean or list of string"
-            "with the same length as clips"
+            "better_frames: show_info must be a boolean or list of string" "with the same length as clips"
         )
 
     allowed_props: Dict[PropType, PropTypeActual] = {
@@ -366,9 +355,7 @@ def better_frames(
     for clip in fmt_clips:
         clips_props.append(clip.std.PlaneStats(plane=0))
     return core.std.FrameEval(
-        fmt_clips[0],
-        partial(_source_frame_selector, clips=fmt_clips, prop_type=props_),
-        prop_src=clips_props
+        fmt_clips[0], partial(_source_frame_selector, clips=fmt_clips, prop_type=props_), prop_src=clips_props
     )
 
 

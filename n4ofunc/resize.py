@@ -40,10 +40,13 @@ def _descale_video(
     src_sh = src_f.subsampling_h
 
     if src_cf == vs.RGB:
-        rgb = src.resize.Point(
-            format=vs.RGBS
-        ).descale.Descale(
-            width, height, kernel, taps, b, c,
+        rgb = src.resize.Point(format=vs.RGBS).descale.Descale(
+            width,
+            height,
+            kernel,
+            taps,
+            b,
+            c,
         )
         return rgb.resize.Point(format=src_f.id)
 
@@ -94,11 +97,13 @@ def _kirsch(src: vs.VideoNode) -> vs.VideoNode:
 
     From kagefunc.py, moved here so I don't need to import it.
     """
-    kirsch1 = src.std.Convolution(matrix=[ 5,  5,  5, -3,  0, -3, -3, -3, -3], saturate=False)  # noqa: E241,E201,E501
-    kirsch2 = src.std.Convolution(matrix=[-3,  5,  5, -3,  0,  5, -3, -3, -3], saturate=False)  # noqa: E241
-    kirsch3 = src.std.Convolution(matrix=[-3, -3,  5, -3,  0,  5, -3, -3,  5], saturate=False)  # noqa: E241
-    kirsch4 = src.std.Convolution(matrix=[-3, -3, -3, -3,  0,  5, -3,  5,  5], saturate=False)  # noqa: E241
-    return core.std.Expr([kirsch1, kirsch2, kirsch3, kirsch4], 'x y max z max a max')
+    kirsch1 = src.std.Convolution(
+        matrix=[5, 5, 5, -3, 0, -3, -3, -3, -3], saturate=False
+    )  # noqa: E241,E201,E501
+    kirsch2 = src.std.Convolution(matrix=[-3, 5, 5, -3, 0, 5, -3, -3, -3], saturate=False)  # noqa: E241
+    kirsch3 = src.std.Convolution(matrix=[-3, -3, 5, -3, 0, 5, -3, -3, 5], saturate=False)  # noqa: E241
+    kirsch4 = src.std.Convolution(matrix=[-3, -3, -3, -3, 0, 5, -3, 5, 5], saturate=False)  # noqa: E241
+    return core.std.Expr([kirsch1, kirsch2, kirsch3, kirsch4], "x y max z max a max")
 
 
 def _retinex_edgemask(src: vs.VideoNode, sigma: int = 1) -> vs.VideoNode:
@@ -112,7 +117,7 @@ def _retinex_edgemask(src: vs.VideoNode, sigma: int = 1) -> vs.VideoNode:
     max_value = 1 if src.format.sample_type == vs.FLOAT else (1 << get_depth(src)) - 1
     ret = core.retinex.MSRCP(luma, sigma=[50, 200, 350], upper_thr=0.005)
     tcanny = ret.tcanny.TCanny(mode=1, sigma=sigma).std.Minimum(coordinates=[1, 0, 1, 0, 0, 1, 0, 1])
-    return core.std.Expr([_kirsch(luma), tcanny], f'x y + {max_value} min')
+    return core.std.Expr([_kirsch(luma), tcanny], f"x y + {max_value} min")
 
 
 def masked_descale(
@@ -301,10 +306,7 @@ def adaptive_scaling(
         diff = core.std.Expr([y, up], "x y - abs").std.PlaneStats()
         return down, diff
 
-    descaled_clips_list = [
-        simple_descale(y, h)
-        for h in range(descale_range[0], descale_range[1])
-    ]
+    descaled_clips_list = [simple_descale(y, h) for h in range(descale_range[0], descale_range[1])]
     descaled_clips = [clip[0] for clip in descaled_clips_list]
     descaled_props = [clip[1] for clip in descaled_clips_list]
 

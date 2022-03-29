@@ -156,16 +156,13 @@ def recursive_apply_mask(
         first_f, last_f = frame
 
         image = fvf.Depth(
-            imwri.Read(mask).resize.Point(
-                format=vs.GRAYS, matrix_s="709"
-            ),
-            src_a.format.bits_per_sample
+            imwri.Read(mask).resize.Point(format=vs.GRAYS, matrix_s="709"), src_a.format.bits_per_sample
         ).std.AssumeFPS(
             fpsnum=src_a.fps.numerator,
             fpsden=src_a.fps.denominator,
         )
 
-        src_a_n, src_b_n = src_a[first_f:last_f + 1], src_b[first_f:last_f + 1]
+        src_a_n, src_b_n = src_a[first_f : last_f + 1], src_b[first_f : last_f + 1]
 
         image = image * ((last_f + 1) - first_f)
         image = get_y(image)

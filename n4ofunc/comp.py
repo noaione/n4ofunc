@@ -23,9 +23,7 @@ class FrameDiff(NamedTuple):
     difference: float
 
 
-def _pad_video_length(
-    clip_a: vs.VideoNode, clip_b: vs.VideoNode
-) -> Tuple[vs.VideoNode, vs.VideoNode]:
+def _pad_video_length(clip_a: vs.VideoNode, clip_b: vs.VideoNode) -> Tuple[vs.VideoNode, vs.VideoNode]:
     clip_a_length = clip_a.num_frames
     clip_b_length = clip_b.num_frames
     if clip_a_length == clip_b_length:
@@ -39,9 +37,7 @@ def _pad_video_length(
     return clip_a, clip_b
 
 
-def _preprocess_clips(
-    clip_a: vs.VideoNode, clip_b: vs.VideoNode
-) -> Tuple[vs.VideoNode, vs.VideoNode]:
+def _preprocess_clips(clip_a: vs.VideoNode, clip_b: vs.VideoNode) -> Tuple[vs.VideoNode, vs.VideoNode]:
     if not isinstance(clip_a, vs.VideoNode):
         raise TypeError("clip_a must be a clip")
     if not isinstance(clip_b, vs.VideoNode):
@@ -117,9 +113,7 @@ def save_difference(
         )
 
     if len(output_filename) != 2:
-        raise Exception(
-            "save_difference: output_filename must be a tuple of two strings"
-        )
+        raise Exception("save_difference: output_filename must be a tuple of two strings")
     clip_a, clip_b = _preprocess_clips(clip_a, clip_b)
     fn_a, fn_b = output_filename
 
@@ -157,9 +151,7 @@ def save_difference(
     print(f"save_difference: {known_diff} differences found, saving images...")
     try:
         for filename, frame_info in differences_data.items():
-            print(
-                f"save_difference: saving frame: {frame_info.number} ({frame_info.difference})"
-            )
+            print(f"save_difference: saving frame: {frame_info.number} ({frame_info.difference})")
             actual_target = target_dir / f"{filename} (%05d).png"
             out: vs.VideoNode = core.imwri.Write(
                 frame_info.frame, filename=str(actual_target), firstnum=frame_info.number
@@ -277,8 +269,7 @@ def stack_compare(
 
     if identity:
         clips = [
-            clip.sub.Subtitle(_generate_ident(ind, clip.width, clip.height))
-            for ind, clip in enumerate(clips)
+            clip.sub.Subtitle(_generate_ident(ind, clip.width, clip.height)) for ind, clip in enumerate(clips)
         ]
 
     # Find needed clip for current `max_vertical_stack`.
@@ -298,7 +289,7 @@ def stack_compare(
     # Input: [A, B, C, D, E, F, G, H]
     # Output: [[A, B], [C, D], [E, F], [G, H]]
     clips = [
-        core.std.StackVertical(clips[i:i + max_vertical_stack])
+        core.std.StackVertical(clips[i : i + max_vertical_stack])
         for i in range(0, len(clips), max_vertical_stack)
     ]
     final_clip = core.std.StackHorizontal(clips) if len(clips) > 1 else clips[0]

@@ -235,11 +235,7 @@ def adaptive_degrain2(
 
     for argument in degrain_kwargs:
         if argument not in DEGRAIN_KERNEL_KWARGS[kernel]:
-            raise ValueError(
-                "adaptive_degrain2: {} is not a valid argument for {}".format(
-                    argument, kernel
-                )
-            )
+            raise ValueError("adaptive_degrain2: {} is not a valid argument for {}".format(argument, kernel))
 
     degrain_func: Callable[[vs.VideoNode], vs.VideoNode]
     if kernel == "smdegrain":
@@ -258,9 +254,7 @@ def adaptive_degrain2(
     elif kernel == "bm3d":
         BM3D = try_import("mvsfunc", "BM3D")
         if BM3D is None:
-            raise ImportError(
-                "adaptive_degrain2: BM3D is not available and the selected kernel is BM3D"
-            )
+            raise ImportError("adaptive_degrain2: BM3D is not available and the selected kernel is BM3D")
         degrain_func = lambda src: BM3D(src, **degrain_kwargs)
     else:
         raise ValueError("adaptive_degrain2: kernel must be one of {}".format(VALID_DEGRAIN_KERNELS))
@@ -271,11 +265,12 @@ def adaptive_degrain2(
     if area == "light":
         adapt_mask = adapt_mask.std.Invert()
 
+    # fmt: off
     limitx = y_plane.std.Convolution(
         [
-            -1, -2, -1,
-            0, 0, 0,
-            1, 2, 1,
+            -1, -2, -1,  # noqa: E241,E131
+             0,  0,  0,  # noqa: E241,E131
+             1,  2,  1,  # noqa: E241,E131
         ],
         saturate=False,
     )
@@ -287,6 +282,7 @@ def adaptive_degrain2(
         ],
         saturate=False,
     )
+    # fmt: on
     limit = core.std.Expr([limitx, limity], "x y max")
     limit = iterate(limit, core.std.Inflate, iter_edge)
 
