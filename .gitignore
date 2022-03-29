@@ -3,3 +3,13 @@ sekrit
 
 *.bat
 __pycache__
+.mypy_cache/
+*.cfg
+*.pyc
+*.vpy
+build/
+dist/
+n4ofunc.egg-info/
+venv/
+env/
+.venv/
