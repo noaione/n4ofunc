@@ -1,11 +1,18 @@
-# flake8: noqa
+"""
+n4ofunc
+~~~~~~~~~
+A collection of VapourSynth functions.
 
-from . import best, comp, degrain, mask, resize, utils, video
+:copyright: (c) 2019-2021 naoTimesdev
+:license: MIT, see LICENSE for more details.
+"""
+
+from . import best, comp, degrain, mask, scale, utils, video
 from .best import *
 from .comp import *
 from .degrain import *
 from .mask import *
-from .resize import *
+from .scale import *
 from .utils import *
 from .video import *
 
