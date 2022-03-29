@@ -30,7 +30,7 @@ def is_extension(filename: str, extension: str) -> bool:
     :class:`bool`
         ``True`` if filename has the same extension as target.
     """
-    filename = filename.lwoer()
+    filename = filename.lower()
     if extension.startswith("."):
         extension = extension[1:]
     dot_after = filename.rfind(".")
