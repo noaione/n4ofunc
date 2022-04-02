@@ -264,8 +264,8 @@ def shift_444(clip: vs.VideoNode):
     if clip.format.color_family != vs.YUV:
         raise TypeError("shift_444: clip must be YUV")
     Y, U, V = split(clip)
-    U = Y.resize.Point(clip.width, clip.height, src_left=0.5)
-    V = V.resize.Point(clip.width, clip.height, src_left=0.5)
+    U = core.resize.Point(U, clip.width, clip.height, src_left=0.5)
+    V = core.resize.Point(V, clip.width, clip.height, src_left=0.5)
     return core.std.ShufflePlanes(clips=[Y, U, V], planes=[0, 0, 0], colorfamily=vs.YUV)
 
 
