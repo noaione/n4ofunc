@@ -1,18 +1,17 @@
 import setuptools
 
-from n4ofunc import __author__, __title__, __version__
-
 with open("README.md") as fh:
     long_description = fh.read()
 
 with open("requirements.txt") as fh:
     install_requires = fh.read()
 
+VERSION = "0.1.0"
 
 setuptools.setup(
-    name=__title__,
-    version=__version__,
-    author=__author__,
+    name="n4ofunc",
+    version=VERSION,
+    author="noaione",
     author_email="noaione0809@gmail.com",
     description="n4ofunc assorted VapourSynth functions",
     long_description=long_description,
