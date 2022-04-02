@@ -23,17 +23,18 @@ SOFTWARE.
 """
 
 from functools import partial
-from typing import Callable, List, Literal, Optional, Tuple, Union
+from typing import Any, Dict, List, Literal, Optional, Tuple, Union
 
 import fvsfunc as fvf
 import vapoursynth as vs
 from vsutil import get_depth, get_w, get_y, iterate
 
 from .mask import simple_native_mask
-from .utils import register_format, try_import
+from .utils import register_format
 
 __all__ = (
     "masked_descale",
+    "upscale_nnedi3",
     "adaptive_scaling",
     "adaptive_rescale",
     "adaptive_descale",
@@ -42,6 +43,38 @@ core = vs.core
 IntegerFloat = Union[int, float]
 VALID_KERNELS = ["bicubic", "bilinear", "lanczos", "spline16", "spline36", "spline64"]
 DescaleKernel = Literal["bicubic", "bilinear", "lanczos", "spline16", "spline36", "spline64"]
+VALID_RESCALE_KERNEL = [
+    "point",
+    "rect",
+    "linear",
+    "cubic",
+    "lanczos",
+    "blackman",
+    "blackmanminlobe",
+    "spline16",
+    "spline36",
+    "spline64",
+    "spline",
+    "gauss",
+    "sinc",
+    "impulse",
+]
+RescaleKernel = Literal[
+    "point",
+    "rect",
+    "linear",
+    "cubic",
+    "lanczos",
+    "blackman",
+    "blackmanminlobe",
+    "spline16",
+    "spline36",
+    "spline64",
+    "spline",
+    "gauss",
+    "sinc",
+    "impulse",
+]
 
 
 def _descale_video(
@@ -149,6 +182,7 @@ def masked_descale(
     target_w: IntegerFloat,
     target_h: IntegerFloat,
     kernel: DescaleKernel = "bicubic",
+    resize_kernel: Optional[DescaleKernel] = None,
     b: IntegerFloat = 1 / 3,
     c: IntegerFloat = 1 / 3,
     taps: int = 3,
@@ -180,6 +214,8 @@ def masked_descale(
         Target descale height.
     kernel: :class:`DescaleKernel`
         Kernel used for descaling.
+    resize_kernel: :class:`DescaleKernel`
+        Kernel used for resizing, if None, will use the same as kernel as descaler.
     b: :class:`Union[int, float]`
         B-parameter for the kernel.
     c: :class:`Union[int, float]`
@@ -203,7 +239,8 @@ def masked_descale(
     if not isinstance(src, vs.VideoNode):
         raise TypeError("masked_descale: The source must be a clip.")
 
-    expandN = -1
+    if expandN is None:
+        expandN = -1
     if expandN < 0:
         raise ValueError("masked_descale: expandN cannot be negative integer")
 
@@ -213,7 +250,7 @@ def masked_descale(
 
     descale = _descale_video(src, target_w, target_h, kernel, b, c, taps, yuv444)
     des_f = register_format(descale, yuv444)
-    Resizer = _get_resizer(b, c, taps, kernel)
+    Resizer = _get_resizer(b, c, taps, resize_kernel or kernel)
     nr_resize = Resizer(src, target_w, target_h, format=des_f.id)
 
     if masked:
@@ -222,6 +259,123 @@ def masked_descale(
             return video_mask
         return core.std.MaskedMerge(descale, nr_resize, video_mask)
     return descale
+
+
+def upscale_nnedi3(
+    src: vs.VideoNode,
+    rfactor: int = 2,
+    width: Optional[int] = None,
+    height: Optional[int] = None,
+    correct_shift: bool = True,
+    kernel: Optional[RescaleKernel] = "spline36",
+    use_gpu: bool = False,
+    **nnedi3_kwargs: Dict[str, Any],
+) -> vs.VideoNode:
+    """
+    A modern port of nnedi3_rpow2
+
+    Parameters
+    -----------
+    src: :class:`VideoNode`
+        The video source.
+    rfactor: :class:`int`
+        Image enlargement factor. Muse be a power of 2 in range of [2 to 1024].
+    width: :class:`int`
+        If correcting the image center shift by using the correct_shift parameter,
+        this parameter is used to specify the width of the image.
+    height: :class:`int`
+        If correcting the image center shift by using the correct_shift parameter,
+        this parameter is used to specify the height of the image.
+    correct_shift: :class:`bool`
+        Correct shift if ``True``. The correction is accomplished by using
+        the subpixel cropping capability of fmtc's resizers.
+    kernel: :class:`RescaleKernel`
+        Sets the resizer used for correcting the image center shift that rescaler
+        introduces. This can be any fmtc's kernels, such as "cubic", "spline36", etc.
+    use_gpu: :class:`bool`
+        Use GPU for rescaling (need nnedi3cl).
+    nnedi3_kwargs: :class:`Dict[str, Any]`
+        Keyword arguments for nnedi3. Refer to nnedi3 documentation.
+
+    Returns
+    -------
+    :class:`VideoNode`
+        The upscaled video.
+    """
+
+    if width is None:
+        width = src.width * rfactor
+    if height is None:
+        height = src.height * rfactor
+
+    if kernel is None:
+        kernel = "spline36"
+    kernel = kernel.lower()
+    if kernel not in VALID_RESCALE_KERNEL:
+        raise ValueError(f"upscale_nnedi3: Invalid kernel: {kernel}")
+
+    hshift = 0.0
+    vshift = -0.5
+    nnedi3_kwargs.pop("dh", None)
+    pkdnnedi = {
+        "dh": True,
+        **nnedi3_kwargs,
+    }
+    pkdchroma = {
+        "kernel": kernel,
+        "sy": -0.5,
+        "planes": [2, 3, 3],
+    }
+
+    tmp = 1
+    times = 0
+    while tmp < rfactor:
+        tmp *= 2
+        times += 1
+
+    if rfactor < 2 or rfactor > 1024:
+        raise ValueError("rescale: rfactor must be between 2 and 1024")
+    if tmp != rfactor:
+        raise ValueError("rescale: rfactor must be a power of 2")
+    if not hasattr(core, "nnedi3"):
+        raise RuntimeError("rescale: nnedi3 plugin is required")
+
+    if correct_shift or src.format.subsampling_h:
+        if not hasattr(core, "fmtc"):
+            raise RuntimeError("rescale: fmtconv plugin is required")
+    if use_gpu and not hasattr(core, "nnedi3cl"):
+        raise RuntimeError("rescale: nnedi3cl plugin is required since use_gpu is True")
+
+    last = src
+    for i in range(times):
+        field = 1 if i == 0 else 0
+        if use_gpu:
+            last = core.nnedi3cl.NNEDI3CL(last, field=field, **pkdnnedi)
+        else:
+            last = core.nnedi3.nnedi3(last, field=field, **pkdnnedi)
+        last = core.std.Transpose(last)
+        if last.format.subsampling_w:
+            # Apparently always using field=1 for the horizontal pass somehow
+            # keeps luma/chroma alignment.
+            field = 1
+            hshift = hshift * 2 - 0.5
+        else:
+            hshift = -0.5
+        if use_gpu:
+            last = core.nnedi3cl.NNEDI3CL(last, field=field, **pkdnnedi)
+        else:
+            last = core.nnedi3.nnedi3(last, field=field, **pkdnnedi)
+        last = core.std.Transpose(last)
+
+    # Correct vertical shift of the chroma.
+    if src.format.subsampling_h:
+        last = core.fmtc.resample(last, w=last.width, h=last.height, **pkdchroma)
+    if correct_shift:
+        last = core.fmtc.resample(last, w=width, h=height, kernel=kernel, sx=hshift, sy=vshift)
+
+    if last.format.id != src.format.id:
+        last = core.fmtc.bitdepth(last, csp=src.format.id)
+    return last
 
 
 def adaptive_scaling(
@@ -235,6 +389,7 @@ def adaptive_scaling(
     taps: int = 3,
     iter_max: int = 3,
     rescale: bool = True,
+    use_gpu: bool = False,
     show_native_res: bool = False,
     show_mask: bool = False,
 ):
@@ -276,6 +431,10 @@ def adaptive_scaling(
         Lanczos taps for the kernel.
     iter_max: :class:`int`
         Iteration count that will expand the mask size.
+    rescale: :class:`bool`
+        Rescale the video if ``True``.
+    use_gpu: :class:`bool`
+        Use GPU for rescaling (need nnedi3cl).
     show_native_res: :class:`bool`
         Show a text notifying what the native resolution are.
     show_mask: :class:`bool`
@@ -297,16 +456,11 @@ def adaptive_scaling(
     if descale_range[0] > descale_range[1]:
         raise ValueError("adaptive_scaling: descale_range first value cannot be larger than second value")
 
-    nnedi3_rpow2: Optional[Callable[..., vs.VideoNode]] = None
     if rescale:
         if descale_range[0] > target_h or descale_range[1] > target_h:
             raise ValueError(
                 "adaptive_scaling: One of the descale_range value cannot be larger than target_h"
             )
-
-        nnedi3_rpow2 = try_import("nnedi3_rpow2", "nnedi3_rpow2")
-        if nnedi3_rpow2 is None:
-            raise ImportError("adaptive_scaling: nnedi3_rpow2 is required for rescaling.")
 
     if target_w % 2 != 0:
         raise ValueError("adaptive_scaling: target_w must be even.")
@@ -347,8 +501,8 @@ def adaptive_scaling(
         y_deb16 = fvf.Depth(y_deb, 16)
 
         if rescale:
-            y_scaled = nnedi3_rpow2(
-                y_deb16, nns=4, correct_shift=True, width=target_w, height=target_h
+            y_scaled = upscale_nnedi3(
+                y_deb16, nns=4, correct_shift=True, width=target_w, height=target_h, use_gpu=use_gpu
             ).fmtc.bitdepth(bits=32)
         else:
             y_scaled = global_clip_resizer(y_deb16, target_w, target_h).fmtc.bitdepth(bits=32)
