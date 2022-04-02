@@ -30,7 +30,7 @@ from typing import Any, Dict, List, Optional, Union
 
 import vapoursynth as vs
 from fvsfunc import Depth
-from vsutil import is_image
+from vsutil import is_image, split
 
 from .utils import is_extension
 
@@ -42,6 +42,7 @@ __all__ = (
     "sfr",
     "debug_clip",
     "debugclip",
+    "shift_444",
 )
 core = vs.core
 
@@ -255,6 +256,17 @@ def debug_clip(clip: vs.VideoNode, extra_info: Optional[str] = None):
         return node[n]
 
     return core.std.FrameEval(clip, partial(_add_frame_info, node=clip), prop_src=clip)
+
+
+def shift_444(clip: vs.VideoNode):
+    if not isinstance(clip, vs.VideoNode):
+        raise TypeError("shift_444: clip must be a clip")
+    if clip.format.color_family != vs.YUV:
+        raise TypeError("shift_444: clip must be YUV")
+    Y, U, V = split(clip)
+    U = Y.resize.Point(clip.width, clip.height, src_left=0.5)
+    V = V.resize.Point(clip.width, clip.height, src_left=0.5)
+    return core.std.ShufflePlanes(clips=[Y, U, V], planes=[0, 0, 0], colorfamily=vs.YUV)
 
 
 src = source
