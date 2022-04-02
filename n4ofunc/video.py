@@ -26,7 +26,7 @@ from __future__ import annotations
 
 from functools import partial
 from pathlib import Path
-from typing import Optional, Union
+from typing import Any, Dict, List, Optional, Union
 
 import vapoursynth as vs
 from fvsfunc import Depth
@@ -46,18 +46,44 @@ __all__ = (
 core = vs.core
 
 
-def _source_func(src: str, force_lsmas: bool = False):
-    if is_extension(src, ".m2ts") or is_extension(src, ".ts"):
-        force_lsmas = True
-    if is_extension(src, ".d2v"):
-        return core.d2v.Source
-    if is_extension(src, ".avi"):
-        return core.avisource.AVISource
-    if is_image(src):
-        return core.imwri.Read
-    if force_lsmas:
-        return core.lsmas.LWLibavSource
-    return core.ffms2.Source
+class VideoSource:
+    def __init__(self, path: Union[str, bytes, Path]):
+        if isinstance(path, str):
+            pass
+        elif isinstance(path, Path):
+            path = str(path)
+        elif isinstance(src, bytes):
+            path = path.decode("utf-8")
+        else:
+            raise TypeError("src must be a string or pathlib.Path")
+        self.path = path
+
+    def _open_source(self, force_lsmas: bool = False, **index_kwargs: Dict[str, Any]) -> vs.VideoNode:
+        if is_extension(self.path, ".m2ts") or is_extension(self.path, ".mts"):
+            force_lsmas = True
+        if is_extension(self.path, ".d2v"):
+            return core.d2v.Source(self.path, **index_kwargs)
+        elif is_extension(self.path, ".dgi"):
+            return core.dgdecodenv.DGSource(self.path, **index_kwargs)
+        elif is_extension(self.path, ".mpls"):
+            pl_index = index_kwargs.pop("playlist", 0)
+            angle_index = index_kwargs.pop("angle", 0)
+            mpls_in = core.mpls.Read(self.path, pl_index, angle_index)
+
+            clips: List[vs.VideoNode] = []
+            for idx in range(mpls_in["count"]):
+                clips.append(core.lsmas.LWLibavSource(mpls_in["clip"][idx], **index_kwargs))
+            return core.std.Splice(clips)
+        elif is_extension(self.path, ".avi"):
+            return core.avisource.AVISource(self.path, **index_kwargs)
+        elif is_image(self.path):
+            return core.imwri.Read(self.path, **index_kwargs)
+        if force_lsmas:
+            return core.lsmas.LWLibavSource(self.path, **index_kwargs)
+        return core.ffms2.Source(self.path, **index_kwargs)
+
+    def open(self, force_lsmas: bool = False, **index_kwargs: Dict[str, Any]) -> vs.VideoNode:
+        return self._open_source(force_lsmas, **index_kwargs)
 
 
 def source(
@@ -71,6 +97,7 @@ def source(
     crop_b: int = 0,
     trim_start: Optional[int] = None,
     trim_end: Optional[int] = None,
+    **index_kwargs: Dict[str, Any],
 ) -> vs.VideoNode:
     """
     Open a video or image source.
@@ -97,6 +124,8 @@ def source(
         The start frame to be trimmed.
     trim_end: :class:`Optional[int]`
         The end frame to be trimmed.
+    index_kwargs: :class:`Dict[str, Any]`
+        The keyword arguments for the indexer.
 
     Returns
     -------
@@ -104,30 +133,35 @@ def source(
         The opened source.
     """
 
-    if isinstance(src, str):
-        pass
-    elif isinstance(src, Path):
-        src = str(src)
-    elif isinstance(src, bytes):
-        src = src.decode("utf-8")
-    else:
-        raise TypeError("src must be a string or pathlib.Path")
+    def _trim(clip: vs.VideoNode, start: Optional[int] = None, end: Optional[int] = None) -> vs.VideoNode:
+        if start is not None and end is not None:
+            return clip.std.Trim(start, end)
+        elif start is not None:
+            return clip.std.Trim(start)
+        elif end is not None:
+            return clip.std.Trim(0, end)
+        return clip
 
-    clip = _source_func(src, lsmas)(src)
+    def _crop(
+        clip: vs.VideoNode, left: int = 0, right: int = 0, top: int = 0, bottom: int = 0
+    ) -> vs.VideoNode:
+        if left == 0 and right == 0 and top == 0 and bottom == 0:
+            return clip
+        return clip.std.Crop(left, right, top, bottom)
+
+    def _dither(clip: vs.VideoNode, format: int, matrix_s: str = "709") -> vs.VideoNode:
+        return clip.resize.Point(format=format, matrix_s=matrix_s)
+
+    def _depth(clip: vs.VideoNode, depth: int, dither_type: str = "error_diffusion") -> vs.VideoNode:
+        return Depth(clip, depth, dither_type)
+
+    vsrc = VideoSource(src)
+    clip = vsrc.open(lsmas, **index_kwargs)
     if dither_yuv and clip.format.color_family != vs.YUV:
-        clip = clip.resize.Point(format=vs.YUV420P8, matrix_s="709")
-
-    if isinstance(depth, int):
-        clip = Depth(clip, depth)
-    if trim_start is not None and trim_end is not None:
-        clip = clip.std.Trim(trim_start, trim_end)
-    elif trim_start is not None:
-        clip = clip.std.Trim(trim_start)
-    elif trim_end is not None:
-        clip = clip.std.Trim(0, trim_end)
-    if crop_l or crop_r or crop_b or crop_t:
-        clip = clip.std.Crop(crop_l, crop_r, crop_t, crop_b)
-    return clip
+        clip = _dither(clip, vs.YUV420P8)
+    if depth is not None:
+        clip = _depth(clip, depth)
+    return _crop(_trim(clip, trim_start, trim_end), crop_l, crop_r, crop_t, crop_b)
 
 
 def SimpleFrameReplace(clip: vs.VideoNode, src_frame: int, target_frame: str):
