@@ -24,8 +24,12 @@ A collection of comparision script
 1. check_difference
 2. save_difference
 3. stack_compare
+   - interleave_compare
    - compare
-4. interleave_compare
+
+`check_difference` is mostly the same as `save_difference`, but instead of saving the frame difference into a picture `check_difference` would only print out into console what frame have difference from the provided threshold.
+
+`stack_compare` or `compare` is a way to compare multiple video or clip and `interleave_compare` is a wrapped partial function for stack_compare that interleave between multiple video
 
 ### degrain.py
 A collection of degraining script.
@@ -36,6 +40,8 @@ A collection of degraining script.
    - adaptive_knlm
    - adaptive_tnlm
    - adaptive_smdegrain
+
+This module only contains a single actual function which is `adaptive_degrain2`, everything else is a partial wrapped function for `adaptive_degrain2` where the kernel is changed.
 
 ### mask.py
 A collection of mask creation tools.
@@ -55,6 +61,8 @@ A collection of scaling function.
 3. adaptive_scaling
    - adaptive_rescale
    - adaptive_descale
+
+`upscale_nnedi3` is actually a typed-version and "fixed" version of `nnedi3_rpow2`. The reason is because the latest version of Vapoursynth does not like it.
 
 ### utils.py
 A collection of utilities script, might not be useful.
