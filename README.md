@@ -7,9 +7,8 @@ A simple function collection that I used
 2. [vsutil](https://github.com/Irrational-Encoding-Wizardry/vsutil/blob/master/vsutil.py)
 
 **Optional**:
-1. [nnedi3_rpow2](https://github.com/darealshinji/vapoursynth-plugins/blob/master/scripts/nnedi3_rpow2.py) `Used at adaptive_scaling if rescale is True`
-2. [havsfunc](https://github.com/HomeOfVapourSynthEvolution/havsfunc/blob/master/havsfunc.py) `Used at adaptive_degrain2 (SMDegrain)`
-3. [mvsfunc](https://github.com/HomeOfVapourSynthEvolution/mvsfunc/blob/master/mvsfunc.py) `Used at adaptive_degrain2 (BM3D)`
+1. [havsfunc](https://github.com/HomeOfVapourSynthEvolution/havsfunc/blob/master/havsfunc.py) `Used at adaptive_degrain2 (SMDegrain)`
+2. [mvsfunc](https://github.com/HomeOfVapourSynthEvolution/mvsfunc/blob/master/mvsfunc.py) `Used at adaptive_degrain2 (BM3D)`
 
 **Main Function**:
 1. adaptive_degrain2
