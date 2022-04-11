@@ -13,7 +13,7 @@ setuptools.setup(
     version=VERSION,
     author="noaione",
     author_email="noaione0809@gmail.com",
-    description="n4ofunc assorted VapourSynth functions",
+    description="N4O assorted VapourSynth functions",
     long_description=long_description,
     long_description_content_type="text/markdown",
     packages=["n4ofunc"],
