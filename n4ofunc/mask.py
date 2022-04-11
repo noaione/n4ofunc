@@ -44,8 +44,7 @@ IntegerFloat = Union[int, float]
 
 def antiedgemask(src: vs.VideoNode, iteration: int = 1) -> vs.VideoNode:
     """
-    Create an anti-edge mask that use a blank clip
-    and Sobel to create a clip that does not include edges.
+    Create an anti-edge mask from inverted sobel edge clip.
 
     Parameters
     ----------
@@ -53,6 +52,7 @@ def antiedgemask(src: vs.VideoNode, iteration: int = 1) -> vs.VideoNode:
         The video to be anti-edge masked.
     iteration: :class:`int`
         How many times we will need to iterate the anti-edge mask.
+        Set to zero if you dont want to iterate.
 
     Returns
     -------
@@ -63,19 +63,12 @@ def antiedgemask(src: vs.VideoNode, iteration: int = 1) -> vs.VideoNode:
         raise TypeError("antiedgemask: src must be a clip")
     if not isinstance(iteration, int):
         raise TypeError("antiedgemask: iteration must be an integer")
-    if iteration < 1:
-        raise ValueError("antiedgemask: iteration must be greater than 0")
 
-    w, h = src.width, src.height
-    y_plane = get_y(src)
+    edge_mask = core.std.Sobel(get_y(src), planes=0)
+    if iteration > 0:
+        edge_mask = iterate(edge_mask, core.std.Maximum, iteration)
 
-    white_clip = core.std.BlankClip(
-        src, width=w, height=h, color=[255] * src.format.num_planes
-    ).std.ShufflePlanes(0, vs.GRAY)
-    edge_mask = core.std.Sobel(y_plane)
-    edge_mask = iterate(edge_mask, core.std.Maximum, iteration)
-
-    return core.std.Expr([white_clip, edge_mask], "x y -")
+    return edge_mask.std.Invert(0)
 
 
 def simple_native_mask(
