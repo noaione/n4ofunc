@@ -3,7 +3,7 @@ n4ofunc
 ~~~~~~~~~
 A collection of VapourSynth functions.
 
-:copyright: (c) 2019-2021 naoTimesdev
+:copyright: (c) 2020-present noaione
 :license: MIT, see LICENSE for more details.
 """
 
