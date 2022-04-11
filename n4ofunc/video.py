@@ -26,7 +26,7 @@ from __future__ import annotations
 
 from functools import partial
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Literal, Optional, Union, cast
 
 import vapoursynth as vs
 from fvsfunc import Depth
@@ -45,6 +45,7 @@ __all__ = (
     "shift_444",
 )
 core = vs.core
+DitherType = Literal["none", "ordered", "random", "error_diffusion"]
 
 
 class VideoSource:
@@ -67,13 +68,13 @@ class VideoSource:
         elif is_extension(self.path, ".dgi"):
             return core.dgdecodenv.DGSource(self.path, **index_kwargs)
         elif is_extension(self.path, ".mpls"):
-            pl_index = index_kwargs.pop("playlist", 0)
-            angle_index = index_kwargs.pop("angle", 0)
+            pl_index = cast(int, index_kwargs.pop("playlist", 0))
+            angle_index = cast(int, index_kwargs.pop("angle", 0))
             mpls_in = core.mpls.Read(self.path, pl_index, angle_index)
 
             clips: List[vs.VideoNode] = []
-            for idx in range(mpls_in["count"]):
-                clips.append(core.lsmas.LWLibavSource(mpls_in["clip"][idx], **index_kwargs))
+            for idx in range(mpls_in["count"]):  # type: ignore
+                clips.append(core.lsmas.LWLibavSource(mpls_in["clip"][idx], **index_kwargs))  # type: ignore
             return core.std.Splice(clips)
         elif is_extension(self.path, ".avi"):
             return core.avisource.AVISource(self.path, **index_kwargs)
@@ -153,7 +154,7 @@ def source(
     def _dither(clip: vs.VideoNode, format: int, matrix_s: str = "709") -> vs.VideoNode:
         return clip.resize.Point(format=format, matrix_s=matrix_s)
 
-    def _depth(clip: vs.VideoNode, depth: int, dither_type: str = "error_diffusion") -> vs.VideoNode:
+    def _depth(clip: vs.VideoNode, depth: int, dither_type: DitherType = "error_diffusion") -> vs.VideoNode:
         return Depth(clip, depth, dither_type)
 
     vsrc = VideoSource(src)
@@ -219,7 +220,7 @@ def debug_clip(clip: vs.VideoNode, extra_info: Optional[str] = None):
     if not isinstance(clip, vs.VideoNode):
         raise TypeError("debug_clip: clip must be a clip")
 
-    def _calc(i: int, n: int, x: int):
+    def _calc(i: Union[int, float], n: int, x: int):
         return str(i * (n / x))
 
     def _generate_style(src_w: int, src_h: int, color: str = "00FFFF"):
@@ -241,7 +242,7 @@ def debug_clip(clip: vs.VideoNode, extra_info: Optional[str] = None):
         # Frame
         text_gen += f"Frame {n} of {node.num_frames -1}\\N"
         # PictType
-        text_gen += f"Picture Type: {f.props['_PictType'].decode()}\\N"
+        text_gen += f"Picture Type: {f.props['_PictType'].decode()}\\N"  # type: ignore
         # Resolution
         width, height = node.width, node.height
         res_ar = round(width / height, 4)

@@ -23,7 +23,7 @@ SOFTWARE.
 """
 
 from functools import partial
-from typing import Any, Dict, List, Literal, Optional, Tuple, Union
+from typing import Any, Dict, List, Literal, Optional, Tuple, Union, cast
 
 import fvsfunc as fvf
 import vapoursynth as vs
@@ -244,9 +244,12 @@ def masked_descale(
     if expandN < 0:
         raise ValueError("masked_descale: expandN cannot be negative integer")
 
-    kernel = kernel.lower()
+    kernel = kernel.lower()  # type: ignore
     if kernel not in VALID_KERNELS:
         raise ValueError(f"masked_descale: Invalid kernel: {kernel}")
+
+    target_w = int(round(target_w))
+    target_h = int(round(target_h))
 
     descale = _descale_video(src, target_w, target_h, kernel, b, c, taps, yuv444)
     des_f = register_format(descale, yuv444)
@@ -310,7 +313,7 @@ def upscale_nnedi3(
 
     if kernel is None:
         kernel = "spline36"
-    kernel = kernel.lower()
+    kernel = kernel.lower()  # type: ignore
     if kernel not in VALID_RESCALE_KERNEL:
         raise ValueError(f"upscale_nnedi3: Invalid kernel: {kernel}")
 
@@ -371,7 +374,7 @@ def upscale_nnedi3(
     if src.format.subsampling_h:
         last = core.fmtc.resample(last, w=last.width, h=last.height, **pkdchroma)
     if correct_shift:
-        last = core.fmtc.resample(last, w=width, h=height, kernel=kernel, sx=hshift, sy=vshift)
+        last = core.fmtc.resample(last, w=width, h=height, kernel=cast(str, kernel), sx=hshift, sy=vshift)
 
     if last.format.id != src.format.id:
         last = core.fmtc.bitdepth(last, csp=src.format.id)
@@ -382,7 +385,7 @@ def adaptive_scaling(
     src: vs.VideoNode,
     target_w: Optional[IntegerFloat] = None,
     target_h: Optional[IntegerFloat] = None,
-    descale_range: List[IntegerFloat] = [],
+    descale_range: List[int] = [],
     kernel: DescaleKernel = "bicubic",
     b: IntegerFloat = 1 / 3,
     c: IntegerFloat = 1 / 3,
@@ -442,7 +445,7 @@ def adaptive_scaling(
     """
     target_w = src.width if target_w is None else target_w
     target_h = src.height if target_h is None else target_h
-    kernel = kernel.lower()
+    kernel = kernel.lower()  # type: ignore
     if kernel not in VALID_KERNELS:
         raise ValueError(f"adaptive_scaling: Invalid kernel: {kernel}")
     if not isinstance(src, vs.VideoNode):
@@ -461,6 +464,8 @@ def adaptive_scaling(
             raise ValueError(
                 "adaptive_scaling: One of the descale_range value cannot be larger than target_h"
             )
+    target_w = int(round(target_w))
+    target_h = int(round(target_h))
 
     if target_w % 2 != 0:
         raise ValueError("adaptive_scaling: target_w must be even.")
@@ -494,7 +499,7 @@ def adaptive_scaling(
 
     def select_scale(n: int, f: List[vs.VideoFrame], descale_list: List[vs.VideoNode]):
         errors = [x.props["PlaneStatsAverage"] for x in f]
-        y_deb = descale_list[errors.index(min(errors))]
+        y_deb = descale_list[errors.index(min(errors))]  # type: ignore
         dmask = core.std.Expr(
             [y, global_clip_resizer(y_deb, target_w, target_h)], "x y - abs 0.025 > 1 0 ?"
         ).std.Maximum()
@@ -502,7 +507,7 @@ def adaptive_scaling(
 
         if rescale:
             y_scaled = upscale_nnedi3(
-                y_deb16, nns=4, correct_shift=True, width=target_w, height=target_h, use_gpu=use_gpu
+                y_deb16, nns=4, correct_shift=True, width=target_w, height=target_h, use_gpu=use_gpu  # type: ignore
             ).fmtc.bitdepth(bits=32)
         else:
             y_scaled = global_clip_resizer(y_deb16, target_w, target_h).fmtc.bitdepth(bits=32)

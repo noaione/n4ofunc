@@ -247,15 +247,15 @@ def adaptive_degrain2(
 
     if not isinstance(src, vs.VideoNode):
         raise TypeError("adaptive_degrain2: src must be a clip")
-    area = area.lower()
+    area = area.lower()  # type: ignore
     if area not in ("light", "dark"):
         raise ValueError("adaptive_degrain2: area must be `light` or `dark`")
 
-    kernel = kernel.lower()
+    kernel = kernel.lower()  # type: ignore
     if kernel not in VALID_DEGRAIN_KERNELS:
         raise ValueError("adaptive_degrain2: kernel must be one of {}".format(VALID_DEGRAIN_KERNELS))
 
-    kernel = VALID_DEGRAIN_KERNELS[kernel]
+    kernel = VALID_DEGRAIN_KERNELS[kernel]  # type: ignore
 
     for argument in degrain_kwargs:
         if argument not in DEGRAIN_KERNEL_KWARGS[kernel]:
@@ -268,7 +268,7 @@ def adaptive_degrain2(
             raise ImportError(
                 "adaptive_degrain2: SMDegrain is not available and the selected kernel is SMDegrain"
             )
-        degrain_func = lambda src: SMDegrain(src, **degrain_kwargs)
+        degrain_func = lambda src: SMDegrain(src, **degrain_kwargs)  # type: ignore
     elif kernel == "knlmeanscl":
         degrain_func = lambda src: core.knlm.KNLMeansCL(src, **degrain_kwargs)
     elif kernel == "tnlmeanscl":
@@ -279,7 +279,7 @@ def adaptive_degrain2(
         BM3D = try_import("mvsfunc", "BM3D")
         if BM3D is None:
             raise ImportError("adaptive_degrain2: BM3D is not available and the selected kernel is BM3D")
-        degrain_func = lambda src: BM3D(src, **degrain_kwargs)
+        degrain_func = lambda src: BM3D(src, **degrain_kwargs)  # type: ignore
     else:
         raise ValueError("adaptive_degrain2: kernel must be one of {}".format(VALID_DEGRAIN_KERNELS))
 

@@ -92,8 +92,8 @@ def _frame_yielder(
     clip_b_gray = clip_b.std.ShufflePlanes(0, vs.GRAY)
 
     frame: vs.RawFrame
-    for num, frame in enumerate(core.std.PlaneStats(clip_a_gray, clip_b_gray).frames()):
-        if frame.props["PlaneStatsDiff"] >= threshold:
+    for num, frame in enumerate(core.std.PlaneStats(clip_a_gray, clip_b_gray).frames()):  # type: ignore
+        if frame.props["PlaneStatsDiff"] >= threshold:  # type: ignore
             yield num, frame
 
 
@@ -129,7 +129,7 @@ def save_difference(
     clip_a: vs.VideoNode,
     clip_b: vs.VideoNode,
     threshold: float = 0.1,
-    output_filename: Tuple[str, str] = ["src1", "src2"],
+    output_filename: List[str] = ["src1", "src2"],
 ) -> NoReturn:
     if not hasattr(sys, "argv"):  # Simple check if script are opened via VSEdit
         raise Exception(
@@ -159,7 +159,7 @@ def save_difference(
                 differences_data[f"{known_diff}_{fn_a}"] = FrameDiff(
                     frame=clip_a[num],
                     number=num,
-                    difference=frame.props["PlaneStatsDiff"],
+                    difference=frame.props["PlaneStatsDiff"],  # type: ignore
                 )
                 known_diff += 1
             last_known_diff = num + 1
@@ -178,7 +178,7 @@ def save_difference(
             print(f"save_difference: saving frame: {frame_info.number} ({frame_info.difference})")
             actual_target = target_dir / f"{filename} (%05d).png"
             out: vs.VideoNode = core.imwri.Write(
-                frame_info.frame, filename=str(actual_target), firstnum=frame_info.number
+                frame_info.frame, imgformat="PNG", filename=str(actual_target), firstnum=frame_info.number
             )
             out.get_frame(0)
     except KeyboardInterrupt:
@@ -278,7 +278,7 @@ def stack_compare(
     def _calculate_needed_clip(max_vert: int, clip_total: int) -> int:
         multiples_of = list(range(max_vert, (clip_total + 1) * max_vert, max_vert))
         multiples_of_total = len(multiples_of)
-        max_needed = None
+        max_needed = 1
         for i in range(multiples_of_total):
             if i + 1 == multiples_of_total - 1:
                 break

@@ -63,11 +63,11 @@ def _source_frame_selector(
     clip_data: List[float] = []
     for p in f:
         if prop_type == "BothAdd":
-            clip_data.append(p.props["PlaneStatsMax"] + p.props["PlaneStatsMin"])
+            clip_data.append(p.props["PlaneStatsMax"] + p.props["PlaneStatsMin"])  # type: ignore
         elif prop_type == "BothSubtract":
-            clip_data.append(p.props["PlaneStatsMax"] - p.props["PlaneStatsMin"])
+            clip_data.append(p.props["PlaneStatsMax"] - p.props["PlaneStatsMin"])  # type: ignore
         else:
-            clip_data.append(p.props[prop_type])
+            clip_data.append(p.props[prop_type])  # type: ignore
     return clips[clip_data.index(max(clip_data))]
 
 
@@ -150,16 +150,16 @@ def better_planes(
         "sub": "BothSubtract",
         "addition": "BothAdd",
         "subtract": "BothSubtract",
-    }
+    }  # type: ignore
 
     if isinstance(props, str):
-        props = props.lower()
+        props = props.lower()  # type: ignore
         if props not in allowed_props:
             raise ValueError(
                 "better_planes: `props` must be a {}".format("`" + "` or `".join(list(allowed_props.keys())))
                 + "`"
             )
-        props_ = [allowed_props[props] for _ in range(3)]
+        props_ = [allowed_props[props] for _ in range(3)]  # type: ignore
     else:
         up_t = len(props)
         props_ = []
@@ -174,7 +174,7 @@ def better_planes(
 
         for n, i in enumerate(t_props_):
             if i in allowed_props:
-                props_.append(allowed_props[i.lower()])
+                props_.append(allowed_props[i.lower()])  # type: ignore
             else:
                 raise ValueError(
                     "better_planes: `props[{}]` must be a {}".format(
@@ -190,21 +190,21 @@ def better_planes(
     if isinstance(show_info, list):
         for n, clip in enumerate(clips):
             y_clips.append(
-                core.std.Text(
+                core.text.Text(
                     core.std.ShufflePlanes(clip, 0, vs.GRAY),
                     f"{show_info[n]} - Y {props_[0]}",
                     7,
                 )
             )
             u_clips.append(
-                core.std.Text(
+                core.text.Text(
                     core.std.ShufflePlanes(clip, 1, vs.GRAY),
                     f"{show_info[n]} - Y {props_[1]}",
                     8,
                 )
             )
             v_clips.append(
-                core.std.Text(
+                core.text.Text(
                     core.std.ShufflePlanes(clip, 2, vs.GRAY),
                     f"{show_info[n]} - Y {props_[2]}",
                     9,
@@ -227,7 +227,7 @@ def better_planes(
                 )
             )
             v_clips.append(
-                core.std.Text(
+                core.text.Text(
                     core.std.ShufflePlanes(clip, 2, vs.GRAY),
                     f"Input {n} - V {props_[2]}",
                     9,
@@ -250,13 +250,19 @@ def better_planes(
         v_clips_prop.append(clip.std.PlaneStats(plane=0))
 
     y_val = core.std.FrameEval(
-        y_clips[0], partial(_source_frame_selector, clips=y_clips, prop_type=props_[0]), prop_src=y_clips_prop
+        y_clips[0],
+        partial(_source_frame_selector, clips=y_clips, prop_type=props_[0]),  # type: ignore
+        prop_src=y_clips_prop,
     )
     u_val = core.std.FrameEval(
-        u_clips[0], partial(_source_frame_selector, clips=u_clips, prop_type=props_[1]), prop_src=u_clips_prop
+        u_clips[0],
+        partial(_source_frame_selector, clips=u_clips, prop_type=props_[1]),  # type: ignore
+        prop_src=u_clips_prop,
     )
     v_val = core.std.FrameEval(
-        v_clips[0], partial(_source_frame_selector, clips=v_clips, prop_type=props_[2]), prop_src=v_clips_prop
+        v_clips[0],
+        partial(_source_frame_selector, clips=v_clips, prop_type=props_[2]),  # type: ignore
+        prop_src=v_clips_prop,
     )
     return core.std.ShufflePlanes([y_val, u_val, v_val], [0, 1, 2], vs.YUV)
 
@@ -342,16 +348,16 @@ def better_frames(
         "sub": "BothSubtract",
         "addition": "BothAdd",
         "subtract": "BothSubtract",
-    }
+    }  # type: ignore
 
     if isinstance(props, str):
-        props = props.lower()
+        props = props.lower()  # type: ignore
         if props not in allowed_props:
             raise ValueError(
                 "better_frames: `props` must be a {}".format("`" + "` or `".join(list(allowed_props.keys())))
                 + "`"
             )
-        props_ = allowed_props[props]
+        props_ = allowed_props[props]  # type: ignore
 
     fmt_clips: List[vs.VideoNode] = []
     if isinstance(show_info, list):

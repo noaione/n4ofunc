@@ -24,7 +24,7 @@ SOFTWARE.
 
 from os import path as os_path
 from pathlib import Path
-from typing import Union
+from typing import Union, cast
 
 import fvsfunc as fvf
 import vapoursynth as vs
@@ -111,13 +111,15 @@ def simple_native_mask(
 
     target_w = clip.width
     target_h = clip.height
+    descale_w = int(round(descale_w))
+    descale_h = int(round(descale_h))
 
     down = core.descale.Debicubic(y_32, descale_w, descale_h)
     up = core.resize.Bicubic(down, target_w, target_h)
     dmask = core.std.Expr([y_32, up], "x y - abs 0.025 > 1 0 ?")
     dmask = iterate(dmask, core.std.Maximum, iter_max)
     if blurh > 0 and blurv > 0:
-        dmask = core.std.BoxBlur(dmask, hradius=blurh, vradius=blurv)
+        dmask = core.std.BoxBlur(dmask, hradius=cast(int, blurh), vradius=cast(int, blurv))
     if not no_resize:
         dmask = core.resize.Bicubic(dmask, descale_w, descale_h)
     return fvf.Depth(dmask, clip_bits)
@@ -173,7 +175,10 @@ def recursive_apply_mask(
         first_f, last_f = frame
 
         image = fvf.Depth(
-            imwri.Read(mask).resize.Point(format=vs.GRAYS, matrix_s="709"), src_a.format.bits_per_sample
+            imwri.Read(
+                str(mask),
+            ).resize.Point(format=vs.GRAYS, matrix_s="709"),
+            src_a.format.bits_per_sample,
         ).std.AssumeFPS(
             fpsnum=src_a.fps.numerator,
             fpsden=src_a.fps.denominator,
@@ -185,13 +190,13 @@ def recursive_apply_mask(
         image = get_y(image)
         src_masked = core.std.MaskedMerge(src_a_n, src_b_n, image)
         for _ in range(iter - 1):
-            src_masked = src_masked.std.MaskedMerge(src_masked, src_b_n, image)
+            src_masked = src_masked.std.MaskedMerge(src_b_n, image)
         src_a = insert_clip(src_a, insert=src_masked, start_frame=first_f)
 
     masks_ass = mask_folder.glob("*.ass")
     for mask in masks_ass:
         blank_mask = src_a.std.BlankClip()
-        ass_mask = get_y(blank_mask.sub.TextFile(mask))
+        ass_mask = get_y(blank_mask.sub.TextFile(str(mask)))
 
         src_a = core.std.MaskedMerge(src_a, src_b, ass_mask)
     return src_a
