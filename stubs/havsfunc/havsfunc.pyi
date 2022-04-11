@@ -1,0 +1,36 @@
+from typing import Literal, Optional, Union
+
+import vapoursynth as vs
+
+def SMDegrain(
+    input: vs.VideoNode,
+    tr: int = 2,
+    thSAD: int = 300,
+    thSADC: Optional[int] = None,
+    RefineMotion: bool = False,
+    contrasharp: Optional[Union[int, bool]] = None,
+    CClip: Optional[vs.VideoNode] = None,
+    interlaced: bool = False,
+    tff: Optional[bool] = None,
+    plane: int = 4,
+    Globals: int = 0,
+    pel: Optional[Literal[1, 2]] = None,
+    subpixel: int = 2,
+    prefilter: int = -1,
+    mfilter: Optional[vs.VideoNode] = None,
+    blksize: Optional[int] = None,
+    overlap: Optional[int] = None,
+    search: int = 4,
+    truemotion: Optional[int] = None,
+    MVglobal: Optional[bool] = None,
+    dct: int = 0,
+    limit: int = 255,
+    limitc: Optional[int] = None,
+    thSCD1: int = 400,
+    thSCD2: int = 130,
+    chroma: bool = True,
+    hpad: Optional[int] = None,
+    vpad: Optional[int] = None,
+    Str: float = 1.0,
+    Amp: float = 0.0625,
+) -> vs.VideoNode: ...
