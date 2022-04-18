@@ -95,11 +95,29 @@ class VideoSource:
         return self._open_source(force_lsmas, **index_kwargs)
 
 
+def _map_x_to_yuv(bits: int):
+    if bits >= 8 and bits < 9:
+        return vs.YUV420P8
+    elif bits >= 9 and bits < 10:
+        return vs.YUV420P9
+    elif bits >= 10 and bits < 12:
+        return vs.YUV420P10
+    elif bits >= 12 and bits < 14:
+        return vs.YUV420P12
+    elif bits >= 14 and bits < 16:
+        return vs.YUV420P14
+    elif bits >= 16 and bits < 18:
+        return vs.YUV420P16
+    else:
+        return vs.YUV444PS
+
+
 def source(
     src: Union[str, bytes, Path],
     lsmas: bool = False,
     depth: Optional[int] = None,
     dither_yuv: bool = True,
+    matrix_s: str = "709",
     crop_l: int = 0,
     crop_r: int = 0,
     crop_t: int = 0,
@@ -121,6 +139,8 @@ def source(
         Change the bitdepth of the source.
     dither_yuv: :class:`bool`
         Whether to dither to YUV source or not.
+    matrix_s: :class:`str`
+        The color matrix of the source.
     crop_l: :class:`int`
         The left crop.
     crop_r: :class:`int`
@@ -158,8 +178,8 @@ def source(
             return clip
         return clip.std.Crop(left, right, top, bottom)
 
-    def _dither(clip: vs.VideoNode, format: int, matrix_s: str = "709") -> vs.VideoNode:
-        return clip.resize.Point(format=format, matrix_s=matrix_s)
+    def _dither_to_yuv(clip: vs.VideoNode, matrix_src: str) -> vs.VideoNode:
+        return clip.resize.Point(format=_map_x_to_yuv(clip.format.bits_per_sample), matrix_s=matrix_src)
 
     def _depth(clip: vs.VideoNode, depth: int, dither_type: DitherType = "error_diffusion") -> vs.VideoNode:
         return Depth(clip, depth, dither_type)
@@ -167,7 +187,7 @@ def source(
     vsrc = VideoSource(src)
     clip = vsrc.open(lsmas, **index_kwargs)
     if dither_yuv and clip.format.color_family != vs.YUV:
-        clip = _dither(clip, vs.YUV420P8)
+        clip = _dither_to_yuv(clip, matrix_s)
     if depth is not None:
         clip = _depth(clip, depth)
     return _crop(_trim(clip, trim_start, trim_end), crop_l, crop_r, crop_t, crop_b)
