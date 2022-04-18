@@ -31,6 +31,8 @@ from typing import Dict, Generator, List, NamedTuple, NoReturn, Optional, Tuple
 import vapoursynth as vs
 from vsutil import get_w, get_y
 
+from .utils import has_plugin_or_raise
+
 __all__ = (
     "check_difference",
     "save_difference",
@@ -66,6 +68,7 @@ def _preprocess_clips(clip_a: vs.VideoNode, clip_b: vs.VideoNode) -> Tuple[vs.Vi
         raise TypeError("clip_a must be a clip")
     if not isinstance(clip_b, vs.VideoNode):
         raise TypeError("clip_b must be a clip")
+    has_plugin_or_raise("fmtc")
     clipa_cf = clip_a.format.color_family
     clipb_cf = clip_b.format.color_family
     clipa_bits = clip_a.format.bits_per_sample
@@ -138,6 +141,7 @@ def save_difference(
 
     if len(output_filename) != 2:
         raise Exception("save_difference: output_filename must be a tuple of two strings")
+    has_plugin_or_raise("imwri")
     clip_a, clip_b = _preprocess_clips(clip_a, clip_b)
     fn_a, fn_b = output_filename
 
@@ -158,6 +162,11 @@ def save_difference(
             if last_known_diff != num:
                 differences_data[f"{known_diff}_{fn_a}"] = FrameDiff(
                     frame=clip_a[num],
+                    number=num,
+                    difference=frame.props["PlaneStatsDiff"],  # type: ignore
+                )
+                differences_data[f"{known_diff}_{fn_b}"] = FrameDiff(
+                    frame=clip_b[num],
                     number=num,
                     difference=frame.props["PlaneStatsDiff"],  # type: ignore
                 )
@@ -236,6 +245,7 @@ def stack_compare(
     the_string = "ABCDEFGHIJKLMNOPQRSTUVWXYZ123456789abcefghijklmnopqrstuvwxyz"
     if len(clips) < 2:
         raise ValueError("stack_compare: please provide 2 or more clips.")
+    has_plugin_or_raise("sub")
 
     def _fallback_str(num: int) -> str:
         try:
