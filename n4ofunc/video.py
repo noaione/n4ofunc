@@ -32,7 +32,7 @@ import vapoursynth as vs
 from fvsfunc import Depth
 from vsutil import is_image, split
 
-from .utils import is_extension
+from .utils import has_plugin_or_raise, is_extension
 
 __all__ = (
     "source",
@@ -64,10 +64,13 @@ class VideoSource:
         if is_extension(self.path, ".m2ts") or is_extension(self.path, ".mts"):
             force_lsmas = True
         if is_extension(self.path, ".d2v"):
+            has_plugin_or_raise("d2v")
             return core.d2v.Source(self.path, **index_kwargs)
         elif is_extension(self.path, ".dgi"):
+            has_plugin_or_raise("dgdecodenv")
             return core.dgdecodenv.DGSource(self.path, **index_kwargs)
         elif is_extension(self.path, ".mpls"):
+            has_plugin_or_raise(["lsmas", "mpls"])
             pl_index = cast(int, index_kwargs.pop("playlist", 0))
             angle_index = cast(int, index_kwargs.pop("angle", 0))
             mpls_in = core.mpls.Read(self.path, pl_index, angle_index)
@@ -77,11 +80,15 @@ class VideoSource:
                 clips.append(core.lsmas.LWLibavSource(mpls_in["clip"][idx], **index_kwargs))  # type: ignore
             return core.std.Splice(clips)
         elif is_extension(self.path, ".avi"):
+            has_plugin_or_raise("avisource")
             return core.avisource.AVISource(self.path, **index_kwargs)
         elif is_image(self.path):
+            has_plugin_or_raise("imwri")
             return core.imwri.Read(self.path, **index_kwargs)
         if force_lsmas:
+            has_plugin_or_raise("lsmas")
             return core.lsmas.LWLibavSource(self.path, **index_kwargs)
+        has_plugin_or_raise("ffms2")
         return core.ffms2.Source(self.path, **index_kwargs)
 
     def open(self, force_lsmas: bool = False, **index_kwargs: Dict[str, Any]) -> vs.VideoNode:
@@ -219,6 +226,7 @@ def debug_clip(clip: vs.VideoNode, extra_info: Optional[str] = None):
     """
     if not isinstance(clip, vs.VideoNode):
         raise TypeError("debug_clip: clip must be a clip")
+    has_plugin_or_raise("sub")
 
     def _calc(i: Union[int, float], n: int, x: int):
         return str(i * (n / x))

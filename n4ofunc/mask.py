@@ -30,6 +30,8 @@ import fvsfunc as fvf
 import vapoursynth as vs
 from vsutil import get_y, insert_clip, iterate
 
+from .utils import has_plugin_or_raise
+
 __all__ = (
     "antiedgemask",
     "simple_native_mask",
@@ -105,6 +107,7 @@ def simple_native_mask(
     :class:`VideoNode`
         The native mask.
     """
+    has_plugin_or_raise(["fmtc", "descale"])
     clip_32 = fvf.Depth(clip, 32)
     y_32 = get_y(clip_32)
     clip_bits = clip.format.bits_per_sample
@@ -164,6 +167,7 @@ def recursive_apply_mask(
 
     if isinstance(mask_folder, str):
         mask_folder = Path(mask_folder)
+    has_plugin_or_raise(["fmtc", "imwri"])
 
     imwri = core.imwri
     masks_png = mask_folder.glob("*.png")

@@ -28,7 +28,7 @@ from typing import Any, Callable, Dict, Literal
 import vapoursynth as vs
 from vsutil import get_y, iterate
 
-from .utils import try_import
+from .utils import has_plugin_or_raise, try_import
 
 __all__ = (
     "adaptive_degrain2",
@@ -254,6 +254,7 @@ def adaptive_degrain2(
     kernel = kernel.lower()  # type: ignore
     if kernel not in VALID_DEGRAIN_KERNELS:
         raise ValueError("adaptive_degrain2: kernel must be one of {}".format(VALID_DEGRAIN_KERNELS))
+    has_plugin_or_raise("adg")
 
     kernel = VALID_DEGRAIN_KERNELS[kernel]  # type: ignore
 
@@ -270,12 +271,16 @@ def adaptive_degrain2(
             )
         degrain_func = lambda src: SMDegrain(src, **degrain_kwargs)  # type: ignore
     elif kernel == "knlmeanscl":
+        has_plugin_or_raise("knlm")
         degrain_func = lambda src: core.knlm.KNLMeansCL(src, **degrain_kwargs)
     elif kernel == "tnlmeanscl":
+        has_plugin_or_raise("tnlm")
         degrain_func = lambda src: core.tnlm.TNLMeans(src, **degrain_kwargs)
     elif kernel == "dfttest":
+        has_plugin_or_raise("dfttest")
         degrain_func = lambda src: core.dfttest.DFTTest(src, **degrain_kwargs)
     elif kernel == "bm3d":
+        has_plugin_or_raise(["bm3d", "fmtc"])
         BM3D = try_import("mvsfunc", "BM3D")
         if BM3D is None:
             raise ImportError("adaptive_degrain2: BM3D is not available and the selected kernel is BM3D")

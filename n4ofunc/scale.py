@@ -31,7 +31,7 @@ import vapoursynth as vs
 from vsutil import get_depth, get_w, get_y, iterate
 
 from .mask import simple_native_mask
-from .utils import register_format
+from .utils import has_plugin_or_raise, register_format
 
 __all__ = (
     "masked_descale",
@@ -90,6 +90,7 @@ def _descale_video(
 ):
     """A modified version of descale.py"""
 
+    has_plugin_or_raise("descale")
     src_f = src.format
     src_cf = src_f.color_family
     src_st = src_f.sample_type
@@ -466,6 +467,7 @@ def adaptive_scaling(
             raise ValueError(
                 "adaptive_scaling: One of the descale_range value cannot be larger than target_h"
             )
+    has_plugin_or_raise(["retinex", "tcanny", "descale", "fmtc", "rgvs", "nnedi3"])
     target_w = int(round(target_w))
     target_h = int(round(target_h))
 
