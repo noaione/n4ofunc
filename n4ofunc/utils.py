@@ -24,7 +24,8 @@ SOFTWARE.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Optional
+import inspect
+from typing import TYPE_CHECKING, List, Optional, Union
 
 from vapoursynth import core
 
@@ -34,6 +35,7 @@ if TYPE_CHECKING:
 __all__ = (
     "is_extension",
     "register_format",
+    "has_plugin_or_raise",
 )
 
 
@@ -109,3 +111,35 @@ def try_import(module: str, name: str) -> Optional[object]:
         return getattr(__import__(module, fromlist=[name]), name)
     except ImportError:
         return None
+
+
+def has_plugin_or_raise(plugins: Union[str, List[str]]):
+    """
+    Check if plugin exist in VapourSynth.
+    If not raise, otherwise return ``True``.
+
+    Parameters
+    ----------
+    plugins: :class:`str` or :class:`List[str]`
+        The plugin name or a list of plugin names.
+
+    Returns
+    --------
+    :class:`bool`
+        ``True`` if the library is available.
+
+    Raises
+    --------
+    :class:`RuntimeError`
+        If the library is not available.
+    """
+    try:
+        caller_function = inspect.stack()[1].function + ": "
+    except Exception:
+        caller_function = ""
+    if isinstance(plugins, str):
+        plugins = [plugins]
+    for plugin in plugins:
+        if not hasattr(core, plugin):
+            raise RuntimeError(f"{caller_function}'{plugin}' is not installed or available in plugin list.")
+    return True
