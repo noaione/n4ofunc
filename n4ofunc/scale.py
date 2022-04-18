@@ -22,6 +22,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 """
 
+import warnings
 from functools import partial
 from typing import Any, Dict, List, Literal, Optional, Tuple, Union, cast
 
@@ -346,13 +347,14 @@ def upscale_nnedi3(
     if correct_shift or src.format.subsampling_h:
         if not hasattr(core, "fmtc"):
             raise RuntimeError("rescale: fmtconv plugin is required")
-    if use_gpu and not hasattr(core, "nnedi3cl"):
-        raise RuntimeError("rescale: nnedi3cl plugin is required since use_gpu is True")
+    has_cl = hasattr(core, "nnedi3cl")
+    if use_gpu and not has_cl:
+        warnings.warn("rescale: nnedi3cl plugin is required since use_gpu is True", RuntimeWarning)
 
     last = src
     for i in range(times):
         field = 1 if i == 0 else 0
-        if use_gpu:
+        if use_gpu and has_cl:
             last = core.nnedi3cl.NNEDI3CL(last, field=field, **pkdnnedi)
         else:
             last = core.nnedi3.nnedi3(last, field=field, **pkdnnedi)
@@ -364,7 +366,7 @@ def upscale_nnedi3(
             hshift = hshift * 2 - 0.5
         else:
             hshift = -0.5
-        if use_gpu:
+        if use_gpu and has_cl:
             last = core.nnedi3cl.NNEDI3CL(last, field=field, **pkdnnedi)
         else:
             last = core.nnedi3.nnedi3(last, field=field, **pkdnnedi)
