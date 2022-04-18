@@ -7,12 +7,13 @@ A collection of VapourSynth functions.
 :license: MIT, see LICENSE for more details.
 """
 
-from . import best, comp, degrain, mask, scale, utils, video
+from . import best, comp, degrain, mask, scale, scene, utils, video
 from .best import *
 from .comp import *
 from .degrain import *
 from .mask import *
 from .scale import *
+from .scene import *
 from .utils import *
 from .video import *
 
