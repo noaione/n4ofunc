@@ -102,14 +102,14 @@ def _descale_video(
         rgb = src.resize.Point(format=vs.RGBS).descale.Descale(
             width,
             height,
-            kernel,
-            taps,
-            b,
-            c,
+            kernel=kernel,
+            taps=taps,
+            b=b,
+            c=c,
         )
         return rgb.resize.Point(format=src_f.id)
 
-    y = src.resize.Point(format=vs.GRAYS).descale.Descale(width, height, kernel, taps, b, c)
+    y = src.resize.Point(format=vs.GRAYS).descale.Descale(width, height, kernel, taps=taps, b=b, c=c)
     y_f = core.register_format(vs.GRAY, src_st, src_bits, 0, 0)
     y = y.resize.Point(format=y_f.id)
 
