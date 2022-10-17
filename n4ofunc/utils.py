@@ -69,6 +69,10 @@ def register_format(clip: VideoNode, yuv444: bool = False) -> VideoFormat:
     """
     Create a new :class:`VideoFormat` object from a :class:`VideoNode`.
 
+    Internally wraps :func:`vapoursynth.core.query_video_format` with
+    fallbacks to :func:`vapoursynth.core.register_format` if the former
+    is not available.
+
     Parameters
     ----------
     clip: :class:`VideoNode`
@@ -82,12 +86,22 @@ def register_format(clip: VideoNode, yuv444: bool = False) -> VideoFormat:
     :class:`VideoFormat`
         The new :class:`VideoFormat` object.
     """
-    return core.register_format(
+    # Check if query_video_format is available
+    if not hasattr(core, "query_video_format"):
+        # Fallback to register_format
+        return core.register_format(
+            clip.format.color_family,
+            clip.format.sample_type,
+            clip.format.bits_per_sample,
+            0 if yuv444 else clip.format.subsampling_w,
+            0 if yuv444 else clip.format.subsampling_h,
+        )
+    return core.query_video_format(
         clip.format.color_family,
         clip.format.sample_type,
         clip.format.bits_per_sample,
         0 if yuv444 else clip.format.subsampling_w,
-        0 if yuv444 else clip.format.subsampling_h,
+        0 if yuv444 else clip.format.subsampling_h
     )
 
 
