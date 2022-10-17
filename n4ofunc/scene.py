@@ -49,6 +49,24 @@ def scene_filter(
     """
     Apply a specific function to a specific frame of a clip.
 
+    Frame mappings explanation:
+    The mappings is a string that separated by space between frame number,
+    you can also provide a range of frames by creating some kind of "list".
+
+    For example:
+    - a z
+        Will filter only frame "a" and "z"
+    - [a b] z
+        Will filter from frame "a" to "b" and frame "z"
+    - [a b] [z z]
+        Will filter from frame "a" to "b" and from frame "z" to "z"
+
+    Examples: ::
+
+        clip = nao.scene_filter(clip, "1 2", core.f3kdb.Deband, None, 12, y=60)
+        clip = nao.scene_filter(clip, "[10, 20]", core.f3kdb.Deband, None, 12, y=60)
+        clip = nao.scene_filter(clip, "[5, 8] 10", core.f3kdb.Deband, None, 12, y=60)
+
     Parameters
     ----------
     clip: :class:`VideoNode`
@@ -69,7 +87,6 @@ def scene_filter(
     -------
     :class:`VideoNode`
         The output clip.
-
     """
     if not isinstance(clip, vs.VideoNode):
         raise ValueError("scene_filter: 'clip' must be a clip.")
