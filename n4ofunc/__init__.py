@@ -18,7 +18,7 @@ from .utils import *
 from .video import *
 
 __title__ = "n4ofunc"
-__version__ = "0.1.1"
+__version__ = "0.1.3"
 __author__ = "noaione"
 __license__ = "MIT"
 __copyright__ = "Copyright 2020-present noaione"
