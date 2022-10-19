@@ -127,7 +127,7 @@ def try_import(module: str, name: str) -> Optional[object]:
         return None
 
 
-def has_plugin_or_raise(plugins: Union[str, List[str]]):
+def has_plugin_or_raise(plugins: Union[str, List[str]], only_once: bool = False):
     """
     Check if plugin exist in VapourSynth.
     If not raise, otherwise return ``True``.
@@ -136,6 +136,8 @@ def has_plugin_or_raise(plugins: Union[str, List[str]]):
     ----------
     plugins: :class:`str` or :class:`List[str]`
         The plugin name or a list of plugin names.
+    only_once: :class:`bool`
+        If ``True``, only raise if all plugins are not found.
 
     Returns
     --------
@@ -153,7 +155,12 @@ def has_plugin_or_raise(plugins: Union[str, List[str]]):
         caller_function = ""
     if isinstance(plugins, str):
         plugins = [plugins]
+    any_found = False
     for plugin in plugins:
-        if not hasattr(core, plugin):
-            raise RuntimeError(f"{caller_function}'{plugin}' is not installed or available in plugin list.")
+        if hasattr(core, plugin):
+            any_found = True
+            if only_once:
+                break
+    if not any_found:
+        raise RuntimeError(f"{caller_function}'{plugin}' is not installed or available in plugin list.")
     return True
