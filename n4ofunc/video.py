@@ -228,7 +228,7 @@ def SimpleFrameReplace(clip: vs.VideoNode, src_frame: int, target_frame: str):
     return pre + clip_src + post
 
 
-def debug_clip(clip: vs.VideoNode, extra_info: Optional[str] = None):
+def debug_clip(clip: vs.VideoNode, extra_info: Optional[str] = None, *, text_mode: bool = False):
     """
     A helper function to show frame information.
 
@@ -238,6 +238,9 @@ def debug_clip(clip: vs.VideoNode, extra_info: Optional[str] = None):
         The video to be debugged.
     extra_info: :class:`Optional[str]`
         What extra info do you want to add after main data.
+    text_mode: :class:`bool`
+        Whether to use :meth:`text.Text` or not for the debug info.
+        Will automatically fallback to this if you don't have the `sub` module.
 
     Returns
     -------
@@ -246,7 +249,7 @@ def debug_clip(clip: vs.VideoNode, extra_info: Optional[str] = None):
     """
     if not isinstance(clip, vs.VideoNode):
         raise TypeError("debug_clip: clip must be a clip")
-    has_plugin_or_raise("sub")
+    has_plugin_or_raise(["sub", "text"], True)
 
     def _calc(i: Union[int, float], n: int, x: int):
         return str(i * (n / x))
@@ -265,23 +268,30 @@ def debug_clip(clip: vs.VideoNode, extra_info: Optional[str] = None):
     if extra_info is not None:
         _extra_style = _generate_style(clip.width, clip.height, "FFFFFF")
 
+    use_text = not hasattr(core, "sub") or text_mode
+    NEW_LINE = "\n" if use_text else r"\N"
+    TOTAL_FRAMES = clip.num_frames
+
     def _add_frame_info(n: int, f: vs.VideoFrame, node: vs.VideoNode):
         text_gen = _main_style
         # Frame
-        text_gen += f"Frame {n} of {node.num_frames -1}\\N"
+        text_gen += f"Frame {n} of {node.num_frames -1} ({TOTAL_FRAMES}){NEW_LINE}"
         # PictType
-        text_gen += f"Picture Type: {f.props['_PictType'].decode()}\\N"  # type: ignore
+        text_gen += f"Picture Type: {f.props['_PictType'].decode()}{NEW_LINE}"  # type: ignore
         # Resolution
         width, height = node.width, node.height
         res_ar = round(width / height, 4)
-        text_gen += f"Resolution: {width}/{height} ({res_ar})\\N"
+        text_gen += f"Resolution: {width}/{height} ({res_ar}){NEW_LINE}"
         # FPS
         fps_num, fps_den = node.fps.numerator, node.fps.denominator
         fps_ar = round(fps_num / fps_den, 4)
         text_gen += f"FPS: {fps_num}/{fps_den} ({fps_ar})"
         if extra_info is not None and _extra_style is not None:
-            text_gen += f"\\N {_extra_style}{extra_info}"
-        node = node.sub.Subtitle(text_gen)
+            text_gen += f"{NEW_LINE} {_extra_style}{extra_info}"
+        if use_text:
+            node = node.text.Text(text_gen)
+        else:
+            node = node.sub.Subtitle(text_gen)
         return node[n]
 
     return core.std.FrameEval(clip, partial(_add_frame_info, node=clip), prop_src=clip)

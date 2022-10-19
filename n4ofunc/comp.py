@@ -202,6 +202,8 @@ def stack_compare(
     identity: bool = False,
     max_vertical_stack: int = 2,
     interleave_only: bool = False,
+    *,
+    text_mode: bool = False,
 ):
     """
     Stack/interleave compare multiple clips.
@@ -236,6 +238,9 @@ def stack_compare(
         If ``interleave_only`` is ``True``, this will be ignored.
     interleave_only: :class:`bool`
         If ``True``, the output will be an interleaved comparision.
+    text_mode: :class:`bool`
+        Whether to use :meth:`text.Text` or not for the debug info.
+        Will automatically fallback to this if you don't have the `sub` module.
 
     Returns
     -------
@@ -245,7 +250,8 @@ def stack_compare(
     the_string = "ABCDEFGHIJKLMNOPQRSTUVWXYZ123456789abcefghijklmnopqrstuvwxyz"
     if len(clips) < 2:
         raise ValueError("stack_compare: please provide 2 or more clips.")
-    has_plugin_or_raise("sub")
+    has_plugin_or_raise(["sub", "text"], True)
+    use_text_mode = not hasattr(core, "sub") or text_mode
 
     def _fallback_str(num: int) -> str:
         try:
@@ -255,8 +261,11 @@ def stack_compare(
 
     def _generate_ident(clip_index: int, src_w: int, src_h: int) -> str:
         gen = r"{\an7\b1\bord5\c&H00FFFF\pos"
-        gen += "({w}, {h})".format(w=25 * (src_w / 1920), h=25 * (src_h / 1080))
-        gen += r"\fs" + "{0}".format(60 * (src_h / 1080)) + r"}"
+        if use_text_mode:
+            gen = ""
+        else:
+            gen += "({w}, {h})".format(w=25 * (src_w / 1920), h=25 * (src_h / 1080))
+            gen += r"\fs" + "{0}".format(60 * (src_h / 1080)) + r"}"
         gen += "Clip {0}".format(_fallback_str(clip_index))
         return gen
 
@@ -273,16 +282,25 @@ def stack_compare(
 
         # Set identity
         if identity:
-            clips = [
-                clip.sub.Subtitle(
-                    _generate_ident(
-                        idx,
-                        clip.width,
-                        clip.height,
+            if use_text_mode:
+                clips = [
+                    core.text.Text(
+                        clip,
+                        _generate_ident(i, clip.width, clip.height)
                     )
-                )
-                for idx, clip in enumerate(clips)
-            ]
+                    for i, clip in enumerate(clips)
+                ]
+            else:
+                clips = [
+                    clip.sub.Subtitle(
+                        _generate_ident(
+                            idx,
+                            clip.width,
+                            clip.height,
+                        )
+                    )
+                    for idx, clip in enumerate(clips)
+                ]
         return core.std.Interleave(clips, mismatch=True)
 
     def _calculate_needed_clip(max_vert: int, clip_total: int) -> int:
@@ -302,22 +320,39 @@ def stack_compare(
         clips = [get_y(clip) for clip in clips]
 
     if identity:
-        clips = [
-            clip.sub.Subtitle(_generate_ident(ind, clip.width, clip.height)) for ind, clip in enumerate(clips)
-        ]
+        if use_text_mode:
+            clips = [
+                core.text.Text(
+                    clip,
+                    _generate_ident(i, clip.width, clip.height)
+                )
+                for i, clip in enumerate(clips)
+            ]
+        else:
+            clips = [
+                clip.sub.Subtitle(
+                    _generate_ident(
+                        idx,
+                        clip.width,
+                        clip.height,
+                    )
+                )
+                for idx, clip in enumerate(clips)
+            ]
 
     # Find needed clip for current `max_vertical_stack`.
     if len(clips) != max_vertical_stack:
         needed_clip = _calculate_needed_clip(max_vertical_stack, len(clips))
         f_clip = clips[0]
         for _ in range(needed_clip - len(clips)):
-            clips.append(
-                core.std.BlankClip(f_clip).sub.Subtitle(
+            bclip = core.std.BlankClip(f_clip)
+            if not use_text_mode:
+                bclip = bclip.sub.Subtitle(
                     r"{\an5\fs120\b1\pos("
                     + "{},{}".format(f_clip.width / 2, f_clip.height / 2)
                     + r")}BlankClip Pad\N(Ignore)"
                 )
-            )
+            clips.append(bclip)
 
     # Split into chunks of `max_vertical_stack` and StackVertical it.
     # Input: [A, B, C, D, E, F, G, H]
