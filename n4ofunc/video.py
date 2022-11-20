@@ -271,6 +271,8 @@ def debug_clip(clip: vs.VideoNode, extra_info: Optional[str] = None, *, text_mod
     use_text = not hasattr(core, "sub") or text_mode
     NEW_LINE = "\n" if use_text else r"\N"
     TOTAL_FRAMES = clip.num_frames
+    _main_style = "" if use_text else _main_style
+    _extra_style = "" if use_text else _extra_style
 
     def _add_frame_info(n: int, f: vs.VideoFrame, node: vs.VideoNode):
         text_gen = _main_style
