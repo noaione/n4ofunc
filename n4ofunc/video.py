@@ -26,13 +26,23 @@ from __future__ import annotations
 
 from functools import partial
 from pathlib import Path
+from string import Formatter
 from typing import Any, Dict, List, Literal, Optional, Union, cast
 
 import vapoursynth as vs
 from fvsfunc import Depth
 from vsutil import is_image, split
 
-from .utils import has_plugin_or_raise, is_extension
+from .utils import (
+    ColorRange,
+    FieldBased,
+    Matrix,
+    Primaries,
+    Transfer,
+    has_plugin_or_raise,
+    is_extension,
+    snakeify,
+)
 
 __all__ = (
     "source",
@@ -228,16 +238,54 @@ def SimpleFrameReplace(clip: vs.VideoNode, src_frame: int, target_frame: str):
     return pre + clip_src + post
 
 
-def debug_clip(clip: vs.VideoNode, extra_info: Optional[str] = None, *, text_mode: bool = False):
+_DEFAULT_DEBUG_FORMAT = (
+    "Frame {n} of {total_abs} ({total})\n"
+    "Picture Type: {fp_pict_type}\n"
+    "Resolution: {width}/{height} ({ar})\n"
+    "FPS: {fps_num}/{fps_den} ({fps_frac})"
+)
+
+
+def debug_clip(
+    clip: vs.VideoNode, format: str = _DEFAULT_DEBUG_FORMAT, alignment: int = 7, *, text_mode: bool = False
+):
     """
     A helper function to show frame information.
+
+    Rewritten!
+
+    Changes from original:
+    - Customizable format parameter
+    Defaults to DEFAULT_DEBUG_FORMAT
+
+    Available variables:
+    - {n} - Current frame number
+    - {total} - Total frames in the clip
+    - {total_abs} - Total absolute frames in the clip (total - 1)
+    - {width} - Width of the clip
+    - {height} - Height of the clip
+    - {ar} - Aspect ratio of the clip
+    - {fps_num} - Numerator of the clip's FPS
+    - {fps_den} - Denominator of the clip's FPS
+    - {fps_frac} - Fraction of the clip's FPS (fps_num / fps_den)
+
+    Anything in FrameProps will be available as {fp_prop_name} without the leading underscore.
+    For example:
+    - _PictType -> {fp_pict_type}
+    - _SARNum -> {fp_sar_num}
+    - _ColorRange -> {fp_color_range}
+
+    Some props will be coerced to a string if possible.
+    Any missing props will be replaced with the same string as the variable.
 
     Parameters
     ----------
     clip: :class:`VideoNode`
         The video to be debugged.
-    extra_info: :class:`Optional[str]`
+    format: :class:`str`
         What extra info do you want to add after main data.
+    alignment: :class:`int`
+        The alignment of the text. (Follow VapourSynth's `text.Text`)
     text_mode: :class:`bool`
         Whether to use :meth:`text.Text` or not for the debug info.
         Will automatically fallback to this if you don't have the `sub` module.
@@ -254,49 +302,85 @@ def debug_clip(clip: vs.VideoNode, extra_info: Optional[str] = None, *, text_mod
     def _calc(i: Union[int, float], n: int, x: int):
         return str(i * (n / x))
 
+    # fmt: off
+    POS_MAP = {
+        1: (15,   1070),
+        2: (960,  1070),
+        3: (1905, 1070),
+
+        4: (15,   540),
+        5: (960,  540),
+        6: (1905, 540),
+
+        7: (15,   10),
+        8: (960,  10),
+        9: (1905, 10),
+    }
+    # fmt: on
+
     def _generate_style(src_w: int, src_h: int, color: str = "00FFFF"):
-        gen = r"{\an7\b1\bord" + _calc(2.25, src_h, 1080) + r"\c&H" + color + r"\pos"
-        gen += "({w}, {h})".format(w=_calc(15, src_w, 1920), h=_calc(10, src_h, 1080))
+        trg_w, trg_h = POS_MAP[alignment]
+        gen = r"{\an" + str(alignment) + r"\b1\bord" + _calc(2.25, src_h, 1080) + r"\c&H" + color + r"\pos"
+        gen += "({w}, {h})".format(w=_calc(trg_w, src_w, 1920), h=_calc(trg_h, src_h, 1080))
         gen += r"\fs" + _calc(24, src_h, 1080) + r"}"
         return gen
 
-    if extra_info is not None:
-        extra_info = extra_info.replace(r"\n", r"\N")
-
-    _main_style = _generate_style(clip.width, clip.height)
-    _extra_style: Optional[str] = None
-    if extra_info is not None:
-        _extra_style = _generate_style(clip.width, clip.height, "FFFFFF")
-
     use_text = not hasattr(core, "sub") or text_mode
-    NEW_LINE = "\n" if use_text else r"\N"
-    TOTAL_FRAMES = clip.num_frames
-    _main_style = "" if use_text else _main_style
-    _extra_style = "" if use_text else _extra_style
+    _text_style = _generate_style(clip.width, clip.height) if not use_text else ""
 
-    def _add_frame_info(n: int, f: vs.VideoFrame, node: vs.VideoNode):
-        text_gen = _main_style
-        # Frame
-        text_gen += f"Frame {n} of {node.num_frames -1} ({TOTAL_FRAMES}){NEW_LINE}"
-        # PictType
-        text_gen += f"Picture Type: {f.props['_PictType'].decode()}{NEW_LINE}"  # type: ignore
-        # Resolution
+    class FormatDict(dict):
+        def __missing__(self, key):
+            return "{" + key + "}"
+
+    format = format.replace(r"\N", r"\n")
+
+    def _add_frame_info(n: int, f: vs.VideoFrame, node: vs.VideoNode, fmt_text: str):
+        # Unpack props
+        total = node.num_frames
+        total_abs = total - 1
         width, height = node.width, node.height
         res_ar = round(width / height, 4)
-        text_gen += f"Resolution: {width}/{height} ({res_ar}){NEW_LINE}"
-        # FPS
-        fps_num, fps_den = node.fps.numerator, node.fps.denominator
-        fps_ar = round(fps_num / fps_den, 4)
-        text_gen += f"FPS: {fps_num}/{fps_den} ({fps_ar})"
-        if extra_info is not None and _extra_style is not None:
-            text_gen += f"{NEW_LINE} {_extra_style}{extra_info}"
+        fps_num = node.fps.numerator
+        fps_den = node.fps.denominator
+        fps_frac = round(fps_num / fps_den, 4)
+        all_keys = list(f.props.keys())
+        all_values = [f.props.get(k) for k in all_keys]
+        all_keys_fmt = list(map(lambda x: "fp_" + snakeify(x[1:]), all_keys))
+        format_dict = {
+            "n": n,
+            "total_abs": total_abs,
+            "total": total,
+            "width": width,
+            "height": height,
+            "ar": res_ar,
+            "fps_num": fps_num,
+            "fps_den": fps_den,
+            "fps_frac": fps_frac,
+        }
+        format_dict.update(zip(all_keys_fmt, all_values))
+        if "fp_color_range" in format_dict:
+            format_dict["fp_color_range"] = ColorRange(format_dict["fp_color_range"]).as_str()
+        if "fp_primaries" in format_dict:
+            format_dict["fp_primaries"] = Primaries(format_dict["fp_primaries"]).as_str()
+        if "fp_transfer" in format_dict:
+            format_dict["fp_transfer"] = Transfer(format_dict["fp_transfer"]).as_str()
+        if "fp_matrix" in format_dict:
+            format_dict["fp_matrix"] = Matrix(format_dict["fp_matrix"]).as_str()
+        if "fp_field_based" in format_dict:
+            format_dict["fp_field_based"] = FieldBased(format_dict["fp_field_based"]).as_str()
+        for k, v in format_dict.items():
+            if isinstance(v, bytes):
+                format_dict[k] = v.decode("utf-8", "replace")
+        text_gen = _text_style
+        formatter = Formatter()
+        text_gen += formatter.vformat(fmt_text, (), FormatDict(format_dict))
         if use_text:
-            node = node.text.Text(text_gen)
+            node = node.text.Text(text_gen, alignment=alignment)
         else:
-            node = node.sub.Subtitle(text_gen)
+            node = node.sub.Subtitle(text_gen.replace(r"\n", r"\N"))
         return node[n]
 
-    return core.std.FrameEval(clip, partial(_add_frame_info, node=clip), prop_src=clip)
+    return core.std.FrameEval(clip, partial(_add_frame_info, node=clip, fmt_text=format), prop_src=clip)
 
 
 def shift_444(clip: vs.VideoNode):

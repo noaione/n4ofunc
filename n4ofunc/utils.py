@@ -25,6 +25,8 @@ SOFTWARE.
 from __future__ import annotations
 
 import inspect
+import re
+from enum import Enum
 from typing import TYPE_CHECKING, List, Optional, Union
 
 from vapoursynth import core
@@ -36,6 +38,7 @@ __all__ = (
     "is_extension",
     "register_format",
     "has_plugin_or_raise",
+    "snakeify",
 )
 
 
@@ -101,7 +104,7 @@ def register_format(clip: VideoNode, yuv444: bool = False) -> VideoFormat:
         clip.format.sample_type,
         clip.format.bits_per_sample,
         0 if yuv444 else clip.format.subsampling_w,
-        0 if yuv444 else clip.format.subsampling_h
+        0 if yuv444 else clip.format.subsampling_h,
     )
 
 
@@ -164,3 +167,106 @@ def has_plugin_or_raise(plugins: Union[str, List[str]], only_once: bool = False)
     if not any_found:
         raise RuntimeError(f"{caller_function}'{plugin}' is not installed or available in plugin list.")
     return True
+
+
+class Primaries(int, Enum):
+    BT709 = 1
+    UNKNOWN = 2
+    BT470M = 4
+    BT470BG = 5
+    ST170M = 6
+    ST240M = 7
+    FILM = 8
+    BT2020 = 9
+    ST428 = 10
+    XYZ = ST428
+    ST431_2 = 11
+    ST432_1 = 12
+    EBU3213E = 22
+
+    def as_str(self) -> str:
+        return self.name.upper().replace("_", " ")
+
+
+class Matrix(int, Enum):
+    RGB = 0
+    GBR = RGB
+    BT709 = 1
+    UNKNOWN = 2
+    FCC = 4
+    BT470BG = 5
+    BT601 = BT470BG
+    SMPTE170M = 6
+    SMPTE240M = 7
+    BT2020NC = 9
+    BT2020C = 10
+    SMPTE2085 = 11
+    CHROMA_DERIVED_NC = 12
+    CHROMA_DERIVED_C = 13
+    ICTCP = 14
+
+    def as_str(self) -> str:
+        return self.name.upper().replace("_", " ")
+
+
+class Transfer(int, Enum):
+    BT709 = 1
+    UNKNOWN = 2
+    BT470M = 4
+    BT470BG = 5
+    BT601 = 6
+    ST240M = 7
+    LINEAR = 8
+    LOG_100 = 9
+    LOG_316 = 10
+    XVYCC = 11
+    SRGB = 13
+    BT2020_10bits = 14
+    BT2020_12bits = 15
+    ST2084 = 16
+    ARIB_B67 = 18
+
+    # libplacebo Transfer
+    # Standard gamut:
+    BT601_525 = 100
+    BT601_625 = 101
+    EBU_3213 = 102
+    # Wide gamut:
+    APPLE = 103
+    ADOBE = 104
+    PRO_PHOTO = 105
+    CIE_1931 = 106
+    DCI_P3 = 107
+    DISPLAY_P3 = 108
+    V_GAMUT = 109
+    S_GAMUT = 110
+    FILM_C = 111
+
+    def as_str(self) -> str:
+        return self.name.upper().replace("_", " ")
+
+
+class ColorRange(int, Enum):
+    LIMITED = 0
+    FULL = 1
+
+    def as_str(self) -> str:
+        return "Limited" if self == ColorRange.LIMITED else "Full"
+
+
+class FieldBased(int, Enum):
+    PROGRESSIVE = 0
+    BOTTOM_FIELD_FIRST = 1
+    TOP_FIELD_FIRST = 2
+
+    def as_str(self) -> str:
+        lstr = self.name.lower().split("_")
+        return " ".join([s.capitalize() for s in lstr])
+
+
+def snakeify(word: str):
+    # https://github.com/jpvanhal/inflection/blob/master/inflection/__init__.py#L397
+    word = re.sub(r"([A-Z]+)([A-Z][a-z])", r"\1_\2", word)
+    word = re.sub(r"([a-z\d])([A-Z])", r"\1_\2", word)
+    word = word.replace("-", "_")
+    return word.lower()
