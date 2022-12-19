@@ -6,7 +6,7 @@ with open("README.md") as fh:
 with open("requirements.txt") as fh:
     install_requires = fh.read()
 
-VERSION = "0.1.4"
+VERSION = "0.1.5"
 
 setuptools.setup(
     name="n4ofunc",
