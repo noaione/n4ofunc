@@ -110,7 +110,10 @@ def _descale_video(
         return rgb.resize.Point(format=src_f.id)
 
     y = src.resize.Point(format=vs.GRAYS).descale.Descale(width, height, kernel, taps=taps, b=b, c=c)
-    y_f = core.register_format(vs.GRAY, src_st, src_bits, 0, 0)
+    if not hasattr(core, "query_video_format"):
+        y_f = core.register_format(vs.GRAY, src_st, src_bits, 0, 0)
+    else:
+        y_f = core.query_video_format(vs.GRAY, src_st, src_bits, 0, 0)
     y = y.resize.Point(format=y_f.id)
 
     if src_cf == vs.GRAY:
