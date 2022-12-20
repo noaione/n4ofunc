@@ -27,7 +27,7 @@ from __future__ import annotations
 from functools import partial
 from pathlib import Path
 from string import Formatter
-from typing import Any, Dict, List, Literal, Optional, Union, cast
+from typing import Any, List, Literal, Optional, Union, cast
 
 import vapoursynth as vs
 from fvsfunc import Depth
@@ -70,7 +70,7 @@ class VideoSource:
             raise TypeError("src must be a string or pathlib.Path")
         self.path = path
 
-    def _open_source(self, force_lsmas: bool = False, **index_kwargs: Dict[str, Any]) -> vs.VideoNode:
+    def _open_source(self, force_lsmas: bool = False, **index_kwargs: Any) -> vs.VideoNode:
         if is_extension(self.path, ".m2ts") or is_extension(self.path, ".mts"):
             force_lsmas = True
         if is_extension(self.path, ".d2v"):
@@ -101,7 +101,7 @@ class VideoSource:
         has_plugin_or_raise("ffms2")
         return core.ffms2.Source(self.path, **index_kwargs)
 
-    def open(self, force_lsmas: bool = False, **index_kwargs: Dict[str, Any]) -> vs.VideoNode:
+    def open(self, force_lsmas: bool = False, **index_kwargs: Any) -> vs.VideoNode:
         return self._open_source(force_lsmas, **index_kwargs)
 
 
@@ -134,7 +134,7 @@ def source(
     crop_b: int = 0,
     trim_start: Optional[int] = None,
     trim_end: Optional[int] = None,
-    **index_kwargs: Dict[str, Any],
+    **index_kwargs: Any,
 ) -> vs.VideoNode:
     """
     Open a video or image source.

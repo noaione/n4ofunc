@@ -24,7 +24,7 @@ SOFTWARE.
 
 import warnings
 from functools import partial
-from typing import Any, Dict, List, Literal, Optional, Tuple, Union, cast
+from typing import Any, List, Literal, Optional, Tuple, Union, cast
 
 import fvsfunc as fvf
 import vapoursynth as vs
@@ -274,7 +274,7 @@ def upscale_nnedi3(
     correct_shift: bool = True,
     kernel: Optional[RescaleKernel] = "spline36",
     use_gpu: bool = False,
-    **nnedi3_kwargs: Dict[str, Any],
+    **nnedi3_kwargs: Any,
 ) -> vs.VideoNode:
     """
     A modern port of nnedi3_rpow2

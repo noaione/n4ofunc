@@ -26,7 +26,7 @@ from __future__ import annotations
 
 import re
 from functools import partial
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, List, Optional
 
 import vapoursynth as vs
 from fvsfunc import Depth
@@ -44,7 +44,7 @@ def scene_filter(
     filter_fn: Callable[..., vs.VideoNode],
     filter_mask: Optional[str] = None,
     *filter_args: List[Any],
-    **filter_kwargs: Dict[str, Any],
+    **filter_kwargs: Any,
 ) -> vs.VideoNode:
     """
     Apply a specific function to a specific frame of a clip.

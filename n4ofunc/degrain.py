@@ -23,7 +23,7 @@ SOFTWARE.
 """
 
 from functools import partial
-from typing import Any, Callable, Dict, Literal
+from typing import Any, Callable, Literal
 
 import vapoursynth as vs
 from vsutil import get_y, iterate
@@ -209,7 +209,7 @@ def adaptive_degrain2(
     area: DegrainArea = "light",
     iter_edge: int = 0,
     show_mask: bool = False,
-    **degrain_kwargs: Dict[str, Any],
+    **degrain_kwargs: Any,
 ) -> vs.VideoNode:
     """
     An adaptive degrainer that took kageru adaptive_grain function
@@ -236,7 +236,7 @@ def adaptive_degrain2(
         How many time we will need to iterate the edge mask.
     show_mask: :class:`bool`
         Do you want to show the mask or not.
-    **degrain_kwargs: :class:`Dict[str, Any]`
+    **degrain_kwargs: :class:`Any`
         The arguments that will be passed to the degrainer.
 
     Returns
